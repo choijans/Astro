@@ -39,8 +39,17 @@ BullMQ + Redis (queue/cache), Docker Compose for Postgres+Redis only (apps run v
 - Work on one task from `docs/plan.md` at a time.
 - Stop at that task's "done when" check and wait for explicit OK before starting the next.
 - Write tests together with the code, not after.
-- Make small, focused commits per task.
+- Keep each task's changes small and focused; the user commits them.
 - Never guess Astro API fields or response shape — check the real response (saved fixture).
 - Treat `docs/prd.md` as the single source of truth.
 - If the PRD appears to conflict with the original assessment brief (a PDF kept outside the
   repo), ask me.
+
+## Git workflow
+- Never run `git commit`, `git merge`, `git push`, `git rebase`, `git reset`, or anything else
+  that changes history or a remote — the user handles all commits, merges and pushes.
+- Read-only git commands (`status`, `diff`, `log`) are fine; create a branch named
+  `task-<number>-<short-name>` at the start of a task.
+- At a task's "done when" check, stop. Show `git status` and a summary of the changes, and give
+  the commit message from `docs/plan.md` for the user to use.
+- Do not start the next task until the user says so.
