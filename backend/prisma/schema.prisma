@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Channel {
+  id                Int         @id
+  title             String
+  subtitle          String
+  stbNumber         Int
+  imageUrl          String
+  category          String
+  genres            String[]
+  languages         String[]
+  rangeKey          String
+  ranking           Int
+  schedule          Json
+  scheduleUpdatedAt DateTime
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  favourites        Favourite[]
+
+  @@index([title])
+  @@index([stbNumber])
+  @@index([category])
+  @@map("channels")
+}
+
+model Favourite {
+  userId    String
+  channelId Int
+  createdAt DateTime @default(now())
+  channel   Channel  @relation(fields: [channelId], references: [id])
+
+  @@id([userId, channelId])
+  @@index([userId])
+  @@map("favourites")
+}
+
+enum CommandType {
+  ADD_FAVORITE
+  REMOVE_FAVORITE
+  REFRESH_CHANNEL
+}
+
+enum CommandStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+model Command {
+  id          String        @id @db.Uuid
+  seq         BigInt        @unique @default(autoincrement())
+  userId      String
+  channelId   Int
+  type        CommandType
+  status      CommandStatus @default(PENDING)
+  payload     Json
+  attempts    Int           @default(0)
+  error       String?
+  createdAt   DateTime      @default(now())
+  processedAt DateTime?
+
+  @@index([userId, channelId, type, seq])
+  @@map("commands")
+}
