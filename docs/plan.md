@@ -36,6 +36,10 @@ workflow) and 17 (range filter) are cuttable extras — cut in this order if tim
 - **Tests:** manual smoke check.
 - **Commit:** `chore: add docker compose for postgres and redis`
 - **Time:** ~1 hr.
+- **Status: DONE.** `docker compose up -d` brought both services up healthy (`0.0.0.0:5433->5432`
+  for Postgres); `psql -U postgres -d astro -c "select 1;"` and `redis-cli ping` both succeeded;
+  a marker row written before `docker compose down` was still present after `docker compose up -d`,
+  confirming the named volumes persist data across a restart.
 
 ## 3. Backend scaffold + Prisma schema/migration
 
