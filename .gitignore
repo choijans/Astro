@@ -4,8 +4,7 @@ build/
 .next/
 coverage/
 
-.env
-.env.local
+.env*
 !.env.example
 
 *.log
