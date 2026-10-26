@@ -94,6 +94,12 @@ workflow) and 17 (range filter) are cuttable extras — cut in this order if tim
   sort asc/desc with tie-break; filter combinations; validation errors; 404.
 - **Commit:** `feat(backend): add channels list, detail and filters endpoints with global security middleware`
 - **Time:** ~5 hrs.
+- **Note:** verified the default Nest error shape is `{statusCode, message, error}` and left it
+  as-is — `message` is a string for most errors but an array of strings for `ValidationPipe`
+  failures; both are valid, but Task 7's frontend error handler must accept both. Also: `q` is
+  capped at 100 characters, and a numeric `q` outside Postgres's `integer` range (e.g.
+  `99999999999999`) is treated as non-numeric rather than passed to Postgres — it previously
+  caused a 500.
 
 ## 6. Favourites + Commands foundation (synchronous, pre-queue)
 
@@ -127,6 +133,10 @@ workflow) and 17 (range filter) are cuttable extras — cut in this order if tim
   across reloads/requests.
 - **Commit:** `feat(frontend): add channel listing with search, sort, filter, infinite scroll and anonymous user id`
 - **Time:** ~6 hrs.
+- **Note:** the backend's error shape is `{statusCode, message, error}`, but `message` is a
+  plain string for most errors and an **array of strings** for `ValidationPipe` failures — this
+  is standard Nest behavior, left as-is (see Task 5 notes). The frontend's error handler must
+  accept both forms when rendering an error message.
 
 ## 8. Channel details page + favourites UI
 

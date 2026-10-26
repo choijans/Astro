@@ -21,6 +21,13 @@ Status: repo scaffolding in progress. See `docs/prd.md` for the product requirem
 Frontend setup will be added here once `/frontend` exists. Seeding/sync instructions will be
 added once Task 4 lands.
 
+## API notes
+
+- Errors are always `{statusCode, message, error}`, but `message` is a **string** for most
+  errors (e.g. 404s) and an **array of strings** for `ValidationPipe` failures (standard Nest
+  behavior). Any client reading error responses — including the frontend's error handler — must
+  accept both.
+
 ## How I built this
 
 
