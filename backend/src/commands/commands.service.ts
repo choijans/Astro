@@ -66,14 +66,21 @@ export class CommandsService {
     return this.processor.process(created);
   }
 
-  private reconcileWithExisting(existing: Command, params: EnqueueParams): Command {
+  private async reconcileWithExisting(existing: Command, params: EnqueueParams): Promise<Command> {
     if (existing.userId !== params.userId) {
       throw new ConflictException('This command id was already used by a different user');
     }
     if (existing.type !== params.type || existing.channelId !== params.channelId) {
       throw new ConflictException('This command id was already used with a different payload');
     }
-    // Idempotent replay: same id, same user, same payload — return as-is, do nothing.
+    if (existing.status === 'PENDING') {
+      // Still unresolved: retry the job add. Safe because the job id is the
+      // command id, so BullMQ treats an already-queued/active job as a no-op
+      // rather than duplicating it. A DONE or FAILED command is never
+      // re-added — the job may already be gone (removeOnComplete/Fail), and
+      // re-adding it there would mean running it a second time.
+      return this.processor.process(existing);
+    }
     return existing;
   }
 

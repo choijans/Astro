@@ -1,11 +1,10 @@
-import type { Command } from '../../../generated/prisma/client';
-import type { PrismaService } from '../../prisma/prisma.service';
+import type { Command, Prisma } from '../../../generated/prisma/client';
 import { AddFavouriteHandler } from './add-favourite.handler';
 
-function createPrismaMock(): PrismaService {
+function createTxMock(): Prisma.TransactionClient {
   return {
     favourite: { upsert: jest.fn().mockResolvedValue({}) },
-  } as unknown as PrismaService;
+  } as unknown as Prisma.TransactionClient;
 }
 
 function makeCommand(overrides: Partial<Command> = {}): Command {
@@ -26,13 +25,13 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
 }
 
 describe('AddFavouriteHandler', () => {
-  it('upserts the favourite for the command\'s user and channel', async () => {
-    const prisma = createPrismaMock();
-    const handler = new AddFavouriteHandler(prisma);
+  it("upserts the favourite for the command's user and channel, via the given transaction", async () => {
+    const tx = createTxMock();
+    const handler = new AddFavouriteHandler();
 
-    await handler.handle(makeCommand());
+    await handler.handle(makeCommand(), tx);
 
-    expect(prisma.favourite.upsert).toHaveBeenCalledWith({
+    expect(tx.favourite.upsert).toHaveBeenCalledWith({
       where: { userId_channelId: { userId: 'user-1', channelId: 42 } },
       create: { userId: 'user-1', channelId: 42 },
       update: {},
@@ -40,11 +39,11 @@ describe('AddFavouriteHandler', () => {
   });
 
   it('adding an already-favourited channel succeeds without throwing (idempotent)', async () => {
-    const prisma = createPrismaMock();
-    const handler = new AddFavouriteHandler(prisma);
+    const tx = createTxMock();
+    const handler = new AddFavouriteHandler();
 
-    await expect(handler.handle(makeCommand())).resolves.toBeUndefined();
-    await expect(handler.handle(makeCommand())).resolves.toBeUndefined();
-    expect(prisma.favourite.upsert).toHaveBeenCalledTimes(2);
+    await expect(handler.handle(makeCommand(), tx)).resolves.toBeUndefined();
+    await expect(handler.handle(makeCommand(), tx)).resolves.toBeUndefined();
+    expect(tx.favourite.upsert).toHaveBeenCalledTimes(2);
   });
 });

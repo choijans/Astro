@@ -2,6 +2,8 @@ import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FavouriteButton } from '../components/FavouriteButton';
 import { addFavourite, ApiError, ChannelListItem, CommandResponse, getFavourites, removeFavourite } from '../lib/api';
+import { PollTimeoutError, pollUntilSettled } from '../lib/poll-command';
+import { usePendingFavouritesStore } from '../store/pending-favourites-store';
 import { renderWithQueryClient } from '../testing/test-utils';
 
 jest.mock('../lib/api', () => ({
@@ -9,6 +11,15 @@ jest.mock('../lib/api', () => ({
   getFavourites: jest.fn(),
   addFavourite: jest.fn(),
   removeFavourite: jest.fn(),
+}));
+
+// The timing/retry behavior of pollUntilSettled has its own dedicated unit
+// test (lib/poll-command.test.ts, with fake timers). Here it's mocked
+// outright so these component tests can drive each outcome (DONE, FAILED,
+// timeout) directly and instantly, without waiting out real poll intervals.
+jest.mock('../lib/poll-command', () => ({
+  ...jest.requireActual('../lib/poll-command'),
+  pollUntilSettled: jest.fn(),
 }));
 
 function makeCommand(overrides: Partial<CommandResponse> = {}): CommandResponse {
@@ -58,6 +69,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   favouritesState = [];
   (getFavourites as jest.Mock).mockImplementation(() => Promise.resolve(favouritesState));
+  usePendingFavouritesStore.setState({ pending: {} });
 });
 
 describe('FavouriteButton', () => {
@@ -187,6 +199,91 @@ describe('FavouriteButton', () => {
         'true',
       ),
     );
+  });
+
+  it('a PENDING response keeps the optimistic heart flipped while polling, then settles DONE and refetches favourites', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
+    (pollUntilSettled as jest.Mock).mockImplementation(async () => {
+      favouritesState = [...favouritesState, makeFavourite()];
+      return makeCommand({ status: 'DONE' });
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Remove Astro30 from favourites' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(pollUntilSettled).toHaveBeenCalledWith('cmd-1');
+
+    // Still flipped once favourites is refetched for real.
+    await waitFor(() => expect(getFavourites).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button', { name: 'Remove Astro30 from favourites' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('a PENDING response stays flipped through an intermediate favourites refetch that still returns stale (pre-mutation) data', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
+    let resolvePoll: (command: CommandResponse) => void = () => {};
+    (pollUntilSettled as jest.Mock).mockReturnValue(
+      new Promise<CommandResponse>((resolve) => {
+        resolvePoll = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    const { queryClient } = renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+    await screen.findByRole('button', { name: 'Remove Astro30 from favourites' });
+
+    // Some unrelated trigger (e.g. window focus) refetches favourites while
+    // the command is still mid-poll. favouritesState is still `[]` (the
+    // server hasn't applied the mutation yet), so this is a stale read — the
+    // heart must not revert because of it.
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['favourites'] });
+    });
+    expect(getFavourites).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Remove Astro30 from favourites' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await act(async () => {
+      resolvePoll(makeCommand({ status: 'DONE' }));
+    });
+  });
+
+  it('rolls back after polling resolves the command as FAILED', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
+    (pollUntilSettled as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Channel does not exist');
+  });
+
+  it('a poll timeout keeps the heart flipped and shows a quiet "Still syncing" message instead of rolling back', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
+    (pollUntilSettled as jest.Mock).mockRejectedValue(new PollTimeoutError());
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    const button = await screen.findByRole('button', { name: 'Remove Astro30 from favourites' });
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Still syncing'));
+    expect(button).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('does not navigate: a click never reaches a wrapping link', async () => {

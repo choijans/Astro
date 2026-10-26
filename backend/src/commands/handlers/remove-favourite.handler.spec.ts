@@ -1,11 +1,10 @@
-import type { Command } from '../../../generated/prisma/client';
-import type { PrismaService } from '../../prisma/prisma.service';
+import type { Command, Prisma } from '../../../generated/prisma/client';
 import { RemoveFavouriteHandler } from './remove-favourite.handler';
 
-function createPrismaMock(): PrismaService {
+function createTxMock(): Prisma.TransactionClient {
   return {
     favourite: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-  } as unknown as PrismaService;
+  } as unknown as Prisma.TransactionClient;
 }
 
 function makeCommand(overrides: Partial<Command> = {}): Command {
@@ -26,21 +25,21 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
 }
 
 describe('RemoveFavouriteHandler', () => {
-  it('deletes the favourite for the command\'s user and channel', async () => {
-    const prisma = createPrismaMock();
-    const handler = new RemoveFavouriteHandler(prisma);
+  it("deletes the favourite for the command's user and channel, via the given transaction", async () => {
+    const tx = createTxMock();
+    const handler = new RemoveFavouriteHandler();
 
-    await handler.handle(makeCommand());
+    await handler.handle(makeCommand(), tx);
 
-    expect(prisma.favourite.deleteMany).toHaveBeenCalledWith({
+    expect(tx.favourite.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'user-1', channelId: 42 },
     });
   });
 
   it('removing an absent favourite succeeds without throwing (idempotent)', async () => {
-    const prisma = createPrismaMock();
-    const handler = new RemoveFavouriteHandler(prisma);
+    const tx = createTxMock();
+    const handler = new RemoveFavouriteHandler();
 
-    await expect(handler.handle(makeCommand())).resolves.toBeUndefined();
+    await expect(handler.handle(makeCommand(), tx)).resolves.toBeUndefined();
   });
 });

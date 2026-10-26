@@ -201,20 +201,58 @@ Two parts, kept as two commits on one branch so Part A can be reviewed/committed
 
 ## 9. Queue, worker and command handlers
 
-- **Goal:** move `CommandsService` from the synchronous resolution built in Task 6 onto BullMQ:
-  enqueue a job using the command's own client-generated UUID as the BullMQ job ID, so
-  re-enqueuing (from the recovery sweep or a resent request) can't create a duplicate job.
-  Separate worker entrypoint, one handler class per command type. `ADD_FAVORITE`/
-  `REMOVE_FAVORITE` handlers apply per-(user, channel) ordering by sequence number, so a stale
-  add-after-remove or remove-after-add is skipped.
-- **Files:** `backend/src/commands/handlers/*`, `backend/src/worker/*`, `backend/src/queue/*`,
-  `backend/src/commands/commands.service.ts` (updated)
+- **Goal (Part A, backend):** move `CommandsService` from the synchronous resolution built in
+  Task 6 onto BullMQ: `enqueue()` persists the command as PENDING, then adds a job (named after
+  the command type, `jobId` = the command UUID, payload = only the command id — the worker
+  reloads the row, the database stays the source of truth) behind the same `ICommandProcessor`
+  interface. A queue-add failure (Redis down) is logged and still returns 202 PENDING; an
+  idempotent replay of a still-PENDING command retries the job add (safe via `jobId`), but a
+  DONE/FAILED command is never re-added. A separate worker process (`src/worker.ts`,
+  `NestFactory.createApplicationContext`) with its own `WorkerModule`, graceful shutdown on
+  SIGINT/SIGTERM, concurrency from env (default 5), 6 retries with exponential backoff from 1s,
+  and bounded `removeOnComplete`/`removeOnFail`. The job processor loads the command row, skips
+  duplicate delivery of a DONE/FAILED command, marks PROCESSING, runs the handler, marks DONE (or
+  PENDING-then-rethrow mid-retry / FAILED on the last attempt). `ADD_FAVORITE`/`REMOVE_FAVORITE`
+  for the same (user, channel) are applied in seq order: a `pg_advisory_xact_lock`-guarded
+  transaction makes the "is this superseded by an already-applied higher-seq command" check and
+  the handler's write atomic. `REFRESH_CHANNEL`, the recovery sweep, caching, rate limiting and
+  `/health` are explicitly out of scope here.
+- **Goal (Part B, frontend):** the 202 response is now PENDING, not DONE, so after a favourite
+  toggle the optimistic state is kept and `GET /commands/:id` is polled (~500ms, up to ~15s)
+  until DONE (then favourites is refetched) or FAILED (then rolled back, message shown); an HTTP
+  error still rolls back immediately. While a channel's command is pending, a small per-channel
+  "pending desired state" UI overlay (not the favourites cache) keeps the heart showing the
+  intended state even through a refetch that returns stale data. A polling timeout stops polling,
+  leaves the heart as-is, and shows a quiet "Still syncing" message, letting the normal refetch
+  reconcile later. This absorbed the status-reconciliation half of what Task 11 originally
+  planned — Task 11 keeps only the outbox, the request timeout and offline handling.
+- **Files:** `backend/src/commands/handlers/*` (updated to take a `Prisma.TransactionClient`),
+  `backend/src/commands/queue-command-processor.ts`, `backend/src/worker/*`, `backend/src/queue/*`,
+  `backend/src/worker.ts`, `backend/tsconfig.worker.json` (separate build output so the worker's
+  dev build can't collide with the API's `nest start --watch`), `backend/src/commands/commands.service.ts`,
+  `backend/src/commands/commands.repository.ts`, `backend/src/commands/command-handler.interface.ts`,
+  `backend/src/commands/commands.module.ts` (updated), `backend/src/scripts/prepare-test-db.ts`
+  (also flushes the test Redis database), `backend/test/e2e-helpers.ts`, `backend/test/now-next.e2e-spec.ts`
+  (updated to poll), `frontend/hooks/useToggleFavourite.ts`, `frontend/lib/poll-command.ts`,
+  `frontend/store/pending-favourites-store.ts`, `frontend/components/FavouriteButton.tsx` (updated)
 - **Done when:** enqueuing the same UUID twice produces one BullMQ job; two conflicting commands
-  for the same (user, channel) resolve to the later one by sequence number.
-- **Tests:** job-id-dedup test (same UUID enqueued twice → one job); per-(user, channel) ordering
-  unit tests for the favourite handlers.
-- **Commit:** `feat(backend): move commands onto BullMQ with per-handler ordering`
-- **Time:** ~3 hrs.
+  for the same (user, channel) resolve to the later one by sequence number; a favourite goes
+  PENDING then DONE with the worker running, stays PENDING with it stopped (heart stays flipped),
+  and is processed once the worker starts.
+- **Tests:** job-id-dedup test (same UUID enqueued twice → one job); queue-add-failure-leaves-
+  PENDING test; processor unit tests (success; retries then succeeds; attempts exhausted → FAILED;
+  duplicate DONE delivery skipped; superseded command skipped); e2e against real Docker Redis
+  (202 → polled DONE; duplicate command id; concurrent add/remove ends correct; ~50-command
+  interleaved stress test; failing queue leaves PENDING); RTL tests for the polling/overlay/
+  timeout behavior.
+- **Commit:** `feat(backend): move commands onto BullMQ with per-handler ordering` (backend),
+  `feat(frontend): poll command status after a favourite toggle` (frontend, separate commit)
+- **Found and fixed (pre-existing bug):** `package.json`'s `start:prod` script pointed at
+  `node dist/main`, the wrong compiled path, since before this task — the real output lands at
+  `dist/src/main.js` (same reason `seed`/`sync`/`start:worker` all use `dist/src/...`). Fixed to
+  `node dist/src/main.js` and smoke-tested; it's a script a reviewer might actually try, unlike an
+  unrelated script that's merely present.
+- **Time:** ~5 hrs.
 
 ## 10. Recovery sweep, REFRESH_CHANNEL and outage test
 
@@ -238,21 +276,25 @@ Two parts, kept as two commits on one branch so Part A can be reviewed/committed
 - **Commit:** `feat(backend): add recovery sweep and REFRESH_CHANNEL collapsing`
 - **Time:** ~3.5 hrs.
 
-## 11. Frontend command outbox + status reconciliation
+## 11. Frontend command outbox, request timeout and offline handling
 
 - **Goal:** a `localStorage` outbox holds commands the API couldn't accept, resending them with
-  the same client UUID (generated in Task 7) once the connection returns. After any command is
-  submitted, the UI tracks its 202/PENDING state and reconciles it against the real state on the
-  next read (poll `GET /commands/:id` or refetch the affected query).
-- **Files:** `frontend/lib/outbox.ts`, `frontend/hooks/useCommandStatus.ts`, `frontend/store/*`,
-  pending-state UI indicators
+  the same client UUID (generated in Task 7) once the connection returns. `lib/api.ts`'s
+  `apiFetch` gets a client-side request timeout (`AbortSignal.timeout(...)` or equivalent) — Task
+  8 found that a dead connection can leave `fetch` never settling at all, so no HTTP error ever
+  arrives to roll an optimistic update back; a timeout turns that into a real, handleable error.
+  Offline handling (e.g. `navigator.onLine` / `online`/`offline` events) decides when to flush the
+  outbox. PENDING → DONE/FAILED status reconciliation itself was moved into Task 9's polling, so
+  it isn't repeated here.
+- **Files:** `frontend/lib/outbox.ts`, `frontend/lib/api.ts` (request timeout), `frontend/store/*`
+  (offline/online state), pending-state UI indicators for outbox items
 - **Done when:** submitting a command while the API is unreachable queues it in `localStorage`;
-  reconnecting resends it with the same UUID and no duplicate is created; a submitted command
-  visibly shows pending-then-resolved state in the UI.
-- **Tests:** unit test for outbox persistence and resend-with-same-UUID; a test asserting the UI
-  reflects PENDING → DONE reconciliation.
-- **Commit:** `feat(frontend): add offline command outbox and status reconciliation`
-- **Time:** ~3 hrs.
+  reconnecting resends it with the same UUID and no duplicate is created; a hung request times out
+  and rolls back instead of leaving the UI stuck.
+- **Tests:** unit test for outbox persistence and resend-with-same-UUID; a test asserting a
+  timed-out request rolls back; an online/offline transition test for outbox flushing.
+- **Commit:** `feat(frontend): add offline command outbox and request timeout`
+- **Time:** ~2.5 hrs.
 
 ## 12. Rate limiting + health endpoint
 

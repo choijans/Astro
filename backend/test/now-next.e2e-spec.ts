@@ -7,6 +7,8 @@ import { AppModule } from '../src/app.module';
 import { CLOCK } from '../src/common/clock';
 import { configureApp } from '../src/configure-app';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { WorkerModule } from '../src/worker/worker.module';
+import { pollCommand } from './e2e-helpers';
 
 /**
  * Fixed inside a real schedule window from the fixture: channel 622
@@ -22,6 +24,7 @@ const EXPECTED_NEXT_TITLE = 'Walking With You S4 Ep04';
 
 describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
   let app: INestApplication<App>;
+  let workerApp: TestingModule;
   let prisma: PrismaService;
   const userId = randomUUID();
 
@@ -37,10 +40,14 @@ describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+
+    workerApp = await Test.createTestingModule({ imports: [WorkerModule] }).compile();
+    await workerApp.init();
   });
 
   afterAll(async () => {
     await prisma.favourite.deleteMany({ where: { userId } });
+    await workerApp.close();
     await app.close();
   });
 
@@ -55,11 +62,13 @@ describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
   });
 
   it('GET /favourites includes now and next, and never the full schedule', async () => {
-    await request(app.getHttpServer())
+    const addRes = await request(app.getHttpServer())
       .post('/favourites')
       .set('X-User-Id', userId)
       .send({ channelId: CHANNEL_ID })
       .expect(202);
+
+    await pollCommand(app, userId, addRes.body.id);
 
     const res = await request(app.getHttpServer()).get('/favourites').set('X-User-Id', userId).expect(200);
 

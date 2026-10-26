@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FavouritesPage } from '../components/FavouritesPage';
 import { ApiError, ChannelListItem, getFavourites, removeFavourite } from '../lib/api';
+import { usePendingFavouritesStore } from '../store/pending-favourites-store';
 import { renderWithQueryClient } from '../testing/test-utils';
 
 jest.mock('../lib/api', () => ({
@@ -47,6 +48,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   favouritesState = [makeFavourite({ id: 1, title: 'Astro30' }), makeFavourite({ id: 2, title: 'Astro31' })];
   (getFavourites as jest.Mock).mockImplementation(() => Promise.resolve(favouritesState));
+  usePendingFavouritesStore.setState({ pending: {} });
 });
 
 describe('FavouritesPage', () => {

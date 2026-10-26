@@ -176,3 +176,7 @@ export function removeFavourite(channelId: number, commandId: string): Promise<C
     headers: { 'X-Command-Id': commandId },
   });
 }
+
+export function getCommand(id: string): Promise<CommandResponse> {
+  return apiFetch<CommandResponse>(`/commands/${id}`);
+}
