@@ -27,6 +27,10 @@ added once Task 4 lands.
   errors (e.g. 404s) and an **array of strings** for `ValidationPipe` failures (standard Nest
   behavior). Any client reading error responses — including the frontend's error handler — must
   accept both.
+- Command handlers (`AddFavouriteHandler`/`RemoveFavouriteHandler`) call `PrismaService` directly
+  instead of going through a repository, since each handler's effect is a single, self-contained
+  idempotent write and `PrismaModule` is global — a repository layer here would only forward the
+  call without adding anything.
 
 ## How I built this
 

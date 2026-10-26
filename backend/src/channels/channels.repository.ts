@@ -4,7 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChannelFilters } from './channels.types';
 import { ChannelSortField, SortOrder } from './dto/list-channels-query.dto';
 
-const LIST_SELECT = {
+// Exported so FavouritesRepository renders favourites with the exact same
+// list-item shape as the channel list (no schedule), with no drift risk.
+export const CHANNEL_LIST_SELECT = {
   id: true,
   title: true,
   subtitle: true,
@@ -51,7 +53,7 @@ export class ChannelsRepository {
         orderBy: [{ [params.sort]: params.order }, { id: 'asc' }],
         skip: (params.page - 1) * params.limit,
         take: params.limit,
-        select: LIST_SELECT,
+        select: CHANNEL_LIST_SELECT,
       }),
       this.prisma.channel.count({ where }),
     ]);
