@@ -38,6 +38,43 @@ export interface ChannelFilters {
   genres: string[];
 }
 
+export interface ScheduleEntry {
+  title: string;
+  eventStartMyt: string;
+  eventEndMyt: string;
+}
+
+export interface ChannelDetail {
+  id: number;
+  title: string;
+  subtitle: string;
+  stbNumber: number;
+  imageUrl: string;
+  category: string;
+  genres: string[];
+  languages: string[];
+  rangeKey: string;
+  ranking: number;
+  schedule: ScheduleEntry[];
+  scheduleUpdatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CommandStatus = 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED';
+
+export interface CommandResponse {
+  id: string;
+  seq: string;
+  userId: string;
+  type: 'ADD_FAVORITE' | 'REMOVE_FAVORITE' | 'REFRESH_CHANNEL';
+  channelId: number;
+  status: CommandStatus;
+  error: string | null;
+  createdAt: string;
+  processedAt: string | null;
+}
+
 export type SortField = 'stbNumber' | 'title' | 'ranking';
 export type SortOrder = 'asc' | 'desc';
 
@@ -115,4 +152,27 @@ export function getChannels(params: GetChannelsParams): Promise<PaginatedChannel
 
 export function getChannelFilters(): Promise<ChannelFilters> {
   return apiFetch<ChannelFilters>('/channels/filters');
+}
+
+export function getChannel(id: number): Promise<ChannelDetail> {
+  return apiFetch<ChannelDetail>(`/channels/${id}`);
+}
+
+export function getFavourites(): Promise<ChannelListItem[]> {
+  return apiFetch<ChannelListItem[]>('/favourites');
+}
+
+export function addFavourite(channelId: number, commandId: string): Promise<CommandResponse> {
+  return apiFetch<CommandResponse>('/favourites', {
+    method: 'POST',
+    headers: { 'X-Command-Id': commandId },
+    body: JSON.stringify({ channelId }),
+  });
+}
+
+export function removeFavourite(channelId: number, commandId: string): Promise<CommandResponse> {
+  return apiFetch<CommandResponse>(`/favourites/${channelId}`, {
+    method: 'DELETE',
+    headers: { 'X-Command-Id': commandId },
+  });
 }

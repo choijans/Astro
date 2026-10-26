@@ -173,11 +173,29 @@ Two parts, kept as two commits on one branch so Part A can be reviewed/committed
   not-found page, favourite toggle on card and detail with optimistic update + rollback,
   dedicated Favourites view.
 - **Files:** `frontend/app/channels/[id]/page.tsx`, `frontend/app/favourites/page.tsx`,
-  `frontend/components/FavouriteButton`, `frontend/components/RefreshButton` (UI only)
+  `frontend/components/{FavouriteButton,ChannelDetailsPage,ChannelDetailsSkeleton,
+  FavouritesPage,NotFoundChannel,BackToChannelsLink,ChannelLogo,HeartIcon,SiteHeader}`,
+  `frontend/hooks/{useFavouritesQuery,useToggleFavourite,useChannelQuery}.ts`,
+  `frontend/lib/schedule.ts`
 - **Done when:** toggling favourite updates instantly and survives reload; a forced failed
   mutation visibly rolls back; the Refresh button renders but doesn't dispatch anything yet.
-- **Tests:** RTL test forcing a failed mutation and asserting rollback; favourites-view filtering
-  test.
+- **Tests:** RTL coverage for `FavouriteButton` (optimistic flip, unique command UUID per click,
+  rollback on HTTP error, rollback on a `FAILED` command status, in-flight clicks ignored,
+  keyboard operability, no navigation on click), `FavouritesPage` (shows only favourites, empty
+  state, error state, optimistic removal with rollback), and `ChannelDetailsPage` (chips, schedule
+  filtering/highlighting, "Schedule not available", disabled Refresh, 404 vs. bad-id vs. other
+  errors).
+- **Known caveat (manual verification, not a Task 8 regression):** `lib/api.ts`'s `apiFetch` has no
+  client-side request timeout. In one manual outage test, killing the backend mid-connection left
+  a pooled keep-alive socket that never produced a network error, so the optimistic favourite
+  stayed flipped indefinitely with no rollback or status message — a real "any HTTP error" never
+  arrived because the browser's `fetch` never settled. A fresh connection (no pooled socket) fails
+  fast (~tens of ms–2s) and rolls back correctly, which is what the RTL tests exercise via mocked
+  rejections. Flagged for a future task if a request timeout is wanted; out of Task 8's scope as
+  specified.
+- **Back to channels:** uses `router.back()` (falling back to `router.push('/')` if there's no
+  history), so the list's previous search/sort/filter URL is restored via browser history. Scroll
+  position is not restored.
 - **Commit:** `feat(frontend): add channel details page and favourite toggle with rollback`
 - **Time:** ~3 hrs.
 
