@@ -19,7 +19,7 @@ function assertTargetsTestDatabase(databaseUrl: string | undefined): asserts dat
 }
 
 async function main(): Promise<void> {
-  config({ path: resolve(process.cwd(), '.env.test'), override: true });
+  config({ path: resolve(process.cwd(), '.env.test'), override: true, quiet: true });
   assertTargetsTestDatabase(process.env.DATABASE_URL);
 
   console.log(`Preparing test database: ${process.env.DATABASE_URL}`);

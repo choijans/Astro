@@ -18,8 +18,23 @@ Status: repo scaffolding in progress. See `docs/prd.md` for the product requirem
    npx prisma migrate dev
    ```
 
-Frontend setup will be added here once `/frontend` exists. Seeding/sync instructions will be
-added once Task 4 lands.
+Seeding/sync: `npm run seed` loads the committed fixture; `npm run sync` pulls fresh data from
+the live Astro endpoint. Both are idempotent upserts.
+
+## Running the frontend
+
+1. Copy the frontend values from `.env.example` into `frontend/.env.local` (just
+   `NEXT_PUBLIC_API_URL=http://localhost:3001`).
+2. Make sure the backend is running (see above) with `CORS_ORIGIN=http://localhost:3000` in
+   `backend/.env` — the frontend runs on port 3000 by default, and a mismatched origin means
+   every request gets silently blocked by CORS.
+3. Install and run:
+   ```
+   cd frontend
+   npm install
+   npm run dev
+   ```
+4. Open `http://localhost:3000`.
 
 ## API notes
 

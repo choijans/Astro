@@ -9,5 +9,6 @@
   "setupFiles": ["<rootDir>/env-test-db.setup.ts"],
   "moduleNameMapper": {
     "^(\\.{1,2}/.*)\\.js$": "$1"
-  }
+  },
+  "maxWorkers": 1
 }

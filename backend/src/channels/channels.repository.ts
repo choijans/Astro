@@ -4,8 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChannelFilters } from './channels.types';
 import { ChannelSortField, SortOrder } from './dto/list-channels-query.dto';
 
-// Exported so FavouritesRepository renders favourites with the exact same
-// list-item shape as the channel list (no schedule), with no drift risk.
+// Exported so FavouritesRepository fetches the exact same shape the channel
+// list does, with no drift risk. Includes `schedule` so the service layer can
+// compute now/next from it — toChannelListItem() strips it before responding.
 export const CHANNEL_LIST_SELECT = {
   id: true,
   title: true,
@@ -17,6 +18,7 @@ export const CHANNEL_LIST_SELECT = {
   languages: true,
   rangeKey: true,
   ranking: true,
+  schedule: true,
   scheduleUpdatedAt: true,
   createdAt: true,
   updatedAt: true,

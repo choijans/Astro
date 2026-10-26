@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CommandType } from '../../generated/prisma/client';
+import { toChannelListItem } from '../channels/channel-list-item.mapper';
+import { CLOCK } from '../common/clock';
+import type { Clock } from '../common/clock';
 import { CommandsService } from '../commands/commands.service';
 import { FavouritesRepository } from './favourites.repository';
 
@@ -9,10 +12,13 @@ export class FavouritesService {
   constructor(
     private readonly commandsService: CommandsService,
     private readonly favouritesRepository: FavouritesRepository,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  list(userId: string) {
-    return this.favouritesRepository.listFavourites(userId);
+  async list(userId: string) {
+    const channels = await this.favouritesRepository.listFavourites(userId);
+    const at = this.clock.now();
+    return channels.map((channel) => toChannelListItem(channel, at));
   }
 
   add(userId: string, channelId: number, commandId: string) {

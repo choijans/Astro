@@ -115,28 +115,56 @@ workflow) and 17 (range filter) are cuttable extras — cut in this order if tim
 - **Commit:** `feat(backend): add favourites and synchronous commands foundation`
 - **Time:** ~3 hrs.
 
-## 7. Frontend scaffold + channel list + anonymous user id
+## 7. Backend now/next show + frontend scaffold and channel list
 
-- **Goal:** Next.js app, TanStack Query + Zustand, URL-synced search/sort/filter, infinite scroll
-  against `GET /channels`, responsive layout with a filter drawer, loading/error/empty states.
-  Cards render the `subtitle` string exactly as the API returns it — never assume a `"CH "`
-  prefix (two real channels don't have one). On first load, generate an anonymous user ID,
-  persist it in `localStorage`, and attach it as `X-User-Id` on every API request from here on.
-- **Files:** `frontend/app/(channels)/page.tsx`, `frontend/components/ChannelCard`, `SearchBar`,
-  `SortControl`, `FilterDrawer`, `frontend/lib/api.ts` (adds `X-User-Id`),
+Two parts, kept as two commits on one branch so Part A can be reviewed/committed on its own.
+
+### Part A — `now`/`next` show on list items (backend)
+
+- **Goal:** `GET /channels` and `GET /favourites` items each gain `now` and `next`
+  (`{title, start, end}` or `null`), computed from the stored `schedule` at request time —
+  `now` is the entry with `start <= clock() < end`; `next` is the first entry starting at or
+  after `now.end` (or after `clock()` if there's no `now`). Both `null` if nothing in the stored
+  schedule qualifies. The full `schedule` is still never included. One shared mapping function
+  backs both endpoints; the clock is injectable so tests are deterministic.
+- **Files:** `backend/src/channels/channel-schedule.util.ts` (or similar shared mapper),
+  `backend/src/channels/channels.repository.ts`, `backend/src/favourites/favourites.repository.ts`,
+  a `Clock`/`CLOCK` injectable.
+- **Done when:** unit tests cover inside-a-show, between-shows, last-item, all-in-the-past and
+  empty-schedule cases; e2e tests with the clock fixed inside the fixture's schedule window
+  confirm `now`/`next` are present and `schedule` is absent; all existing tests still pass.
+- **Tests:** unit (schedule computation) + e2e (fixed clock against real seeded data).
+- **Commit:** `feat(backend): add now and next show to channel list items`
+
+### Part B — frontend scaffold + channel list
+
+- **Goal:** Next.js app (App Router, TypeScript, Tailwind, Jest + RTL), TanStack Query +
+  Zustand, URL-synced search/sort/filter (URL is the single source of truth — not duplicated
+  into Zustand), infinite scroll against `GET /channels`, filter dialog (native `<dialog>`),
+  responsive grid, loading/error/empty states. Cards render the `subtitle` string exactly as the
+  API returns it — never assume a `"CH "` prefix — plus the new Now/Next rows from Part A. No
+  category on the card (superseded FR-1's older card description — see Task 7 note). On first
+  load, generate an anonymous user ID, persist it in `localStorage`, attach it as `X-User-Id` on
+  every API request.
+- **Files:** `frontend/app/page.tsx`, `frontend/components/ChannelCard`, `SearchBar`,
+  `SortControl`, `FilterDialog`, `frontend/lib/api.ts` (adds `X-User-Id`),
   `frontend/lib/user-id.ts`, `frontend/store/*`
-- **Done when:** the real 167 seeded channels render, scroll loads more, search/sort/filter
-  update the URL and results, layout holds at 360px width; every request carries a stable
-  `X-User-Id` that survives a reload.
-- **Tests:** RTL tests for debounce, sort change, filter combination, the three UI states, a card
-  rendering the non-"CH" subtitle unmodified, and a test asserting the same user id is reused
-  across reloads/requests.
+- **Done when:** the real 167 seeded channels render with Now/Next, scroll loads more,
+  search/sort/filter update the URL and results, layout holds at 360px/~800px/desktop; every
+  request carries a stable `X-User-Id` that survives a reload.
+- **Tests:** RTL tests for debounce, sort change, the filter dialog's stage/Apply/Reset/X/Escape
+  behavior, filter combination, the three UI states, a card rendering the non-"CH" subtitle and
+  null Now/Next, the infinite-scroll sentinel, the user id being created once and reused, and the
+  error handler accepting both string and array `message`.
 - **Commit:** `feat(frontend): add channel listing with search, sort, filter, infinite scroll and anonymous user id`
-- **Time:** ~6 hrs.
+- **Time:** ~8 hrs (6 original + ~2 for Part A and the dialog/Now-Next work).
 - **Note:** the backend's error shape is `{statusCode, message, error}`, but `message` is a
   plain string for most errors and an **array of strings** for `ValidationPipe` failures — this
   is standard Nest behavior, left as-is (see Task 5 notes). The frontend's error handler must
   accept both forms when rendering an error message.
+- **Note:** PRD FR-1 still lists "category" as a card field; this task's explicit instructions
+  (no category, Now/Next instead) supersede it — FR-1's wording needs updating on next PRD
+  re-export, not done here.
 
 ## 8. Channel details page + favourites UI
 
