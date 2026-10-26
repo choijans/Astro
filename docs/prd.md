@@ -36,15 +36,15 @@ Build a portal to browse Astro channels, view channel details, manage favourites
 
 | ID | Requirement | Acceptance criteria |
 |---|---|---|
-| FR-1 | Channel listing | Cards show logo, title, the subtitle exactly as supplied (usually "CH 100", but some channels use other text, so no prefix is assumed) and category. Infinite scroll: the first 24 channels load, and the next page loads automatically as the user nears the bottom. Pages use a stable order (sort field, then ID) so no channel repeats or is skipped. The list is served from the database, never by calling Astro at request time. |
+| FR-1 | Channel listing | Cards show the logo, title, the subtitle exactly as supplied (usually "CH 100", but some channels use other text, so no prefix is assumed), what is on now (highlighted) and what is on next with its start time. The list API returns these two shows, computed from the stored schedule at request time, and never the whole schedule. If the stored schedule is out of date, the card simply shows no schedule. Infinite scroll: the first 24 channels load, and the next page loads automatically as the user nears the bottom. Pages use a stable order (sort field, then ID) so no channel repeats or is skipped. The list is served from the database, never by calling Astro at request time. |
 | FR-2 | Search | Case-insensitive match on channel title or channel number (typing 100 finds CH 100). Debounced input. Clear empty state when nothing matches. |
 | FR-3 | Sorting | Sort by channel number (default, ascending), title, or ranking, ascending or descending. Channel number sorts numerically. |
-| FR-4 | Filtering | Filter by category, language and genre, plus channel number range (0-199, 200-299, and so on up to 800-899, from Astro's rangeKey), which is built after the core filters. Filters combine with each other, with search and with sort. State lives in URL query params so a view can be shared and survives reload. |
-| FR-5 | Channel details | Route `/channels/:id` shows logo, title, number, category, languages, genres, current schedule (title, start and end in MYT), last-updated time (our own sync time, since Astro supplies none), a favourite button and a Refresh button that queues REFRESH_CHANNEL for that channel. Astro's own page URLs appear only as a View on Astro link. Unknown ID shows a not-found page. |
+| FR-4 | Filtering | Filter by category, language and genre, plus channel number range (0-199, 200-299, and so on up to 800-899, from Astro's rangeKey), which is built after the core filters. Filters open from a Filters button in a dialog with collapsible groups, a Reset button and an Apply button; choices take effect on Apply. Filters combine with each other, with search and with sort. State lives in URL query params so a view can be shared and survives reload. |
+| FR-5 | Channel details | Route `/channels/:id` shows logo, title, number, category, languages, genres, current schedule (title, start and end in MYT), last-updated time (our own sync time, since Astro supplies none), a favourite button and a Refresh button that queues REFRESH_CHANNEL for that channel. The schedule list shows only entries that have not yet ended, with the current one highlighted. Astro's own page URLs are not used. Unknown ID shows a not-found page. |
 | FR-6 | Favourites | Toggle from card and details page. A Favourites view shows only saved channels. UI updates optimistically and rolls back if the command fails. Favourites persist across reloads. |
 | FR-7 | Commands | ADD_FAVORITE, REMOVE_FAVORITE and REFRESH_CHANNEL are submitted to the API, queued, processed asynchronously and their status can be read. |
 | FR-8 | Data sync | A seed script loads the committed snapshot. Refresh pulls fresh data from Astro. Sync is an idempotent upsert and tolerates Astro being down. |
-| FR-9 | Responsive UI | Usable from 360px phones to desktop. Filters collapse into a drawer on small screens. |
+| FR-9 | Responsive UI | Usable from 360px phones to desktop. Filters always open in a dialog from a Filters button, on every screen size. Cards go from four columns on desktop to one on mobile. |
 | FR-10 | UI states | Every data view has loading, error (with retry) and empty states. |
 
 ## 5. Non-functional requirements
@@ -90,14 +90,14 @@ Indexes: channels(title), channels(stb_number), channels(category), favourites(u
 
 | Method and path | Purpose | Success | Errors |
 |---|---|---|---|
-| GET /channels | List with q, sort, order, category, language, genre, range, page, limit | 200 | 400 invalid params |
+| GET /channels | List with q, sort, order, category, language, genre, range, page, limit (each item includes the now and next show) | 200 | 400 invalid params |
 | GET /channels/filters | Distinct categories, languages, genres and number ranges | 200 | none expected |
 | GET /channels/:id | Channel details with schedule | 200 | 404 |
 | GET /favourites | Current user's favourites | 200 | 400 missing user header |
 | POST /favourites | Wrapper that enqueues ADD_FAVORITE | 202 | 400, 404 unknown channel |
 | DELETE /favourites/:channelId | Wrapper that enqueues REMOVE_FAVORITE | 202 | 400 |
-| POST /commands | Generic command entry (all three types) | 202 | 400, 429 |
-| GET /commands/:id | Command status | 200 | 404 |
+| POST /commands | Generic command entry (all three types) | 202 | 400, 409 (command ID reused by another user or with a different payload), 429 |
+| GET /commands/:id | Command status (owner only; other users get 404) | 200 | 404 |
 | GET /health | Liveness and dependency check | 200 | 503 |
 
 All errors use one shape: `statusCode`, `message`, `error`. All writes go through the queue, so there is one write path: the favourites routes and POST /commands call the same CommandsService.enqueue function. Rate limiting applies to POST /commands, POST /favourites and DELETE /favourites/:channelId.

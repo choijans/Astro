@@ -1,0 +1,118 @@
+import { useUiStore } from '../store/ui-store';
+
+export interface ShowSlot {
+  title: string;
+  start: string;
+  end: string;
+}
+
+export interface ChannelListItem {
+  id: number;
+  title: string;
+  subtitle: string;
+  stbNumber: number;
+  imageUrl: string;
+  category: string;
+  genres: string[];
+  languages: string[];
+  rangeKey: string;
+  ranking: number;
+  scheduleUpdatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  now: ShowSlot | null;
+  next: ShowSlot | null;
+}
+
+export interface PaginatedChannels {
+  data: ChannelListItem[];
+  page: number;
+  limit: number;
+  total: number;
+  hasNextPage: boolean;
+}
+
+export interface ChannelFilters {
+  categories: string[];
+  languages: string[];
+  genres: string[];
+}
+
+export type SortField = 'stbNumber' | 'title' | 'ranking';
+export type SortOrder = 'asc' | 'desc';
+
+export interface GetChannelsParams {
+  q?: string;
+  sort?: SortField;
+  order?: SortOrder;
+  category?: string;
+  language?: string;
+  genre?: string;
+  page?: number;
+  limit?: number;
+}
+
+export class ApiError extends Error {
+  readonly statusCode: number;
+
+  constructor(message: string, statusCode: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.statusCode = statusCode;
+  }
+}
+
+/** The backend sends `message` as a string for most errors, but as an array
+ * of strings for ValidationPipe failures — both are handled here. */
+function extractErrorMessage(body: unknown): string {
+  if (body && typeof body === 'object' && 'message' in body) {
+    const message = (body as { message: unknown }).message;
+    if (Array.isArray(message)) {
+      return message.join(', ');
+    }
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+  return 'Something went wrong. Please try again.';
+}
+
+function getBaseUrl(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!baseUrl) {
+    throw new Error('NEXT_PUBLIC_API_URL is not set');
+  }
+  return baseUrl;
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${getBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': useUiStore.getState().userId,
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new ApiError(extractErrorMessage(body), response.status);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function getChannels(params: GetChannelsParams): Promise<PaginatedChannels> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  return apiFetch<PaginatedChannels>(`/channels?${query.toString()}`);
+}
+
+export function getChannelFilters(): Promise<ChannelFilters> {
+  return apiFetch<ChannelFilters>('/channels/filters');
+}

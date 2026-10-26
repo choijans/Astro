@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 import { resolve } from 'node:path';
 
-config({ path: resolve(process.cwd(), '.env.test'), override: true });
+config({ path: resolve(process.cwd(), '.env.test'), override: true, quiet: true });
 
 if (!process.env.DATABASE_URL?.includes('/astro_test')) {
   throw new Error(
