@@ -1,29 +1,17 @@
 import { Module } from '@nestjs/common';
-import { CommandHandlerRegistry } from './command-handler-registry';
-import { COMMAND_HANDLER } from './command-handler.interface';
+import { QueueModule } from '../queue/queue.module';
 import { COMMAND_PROCESSOR } from './command-processor.interface';
 import { CommandsController } from './commands.controller';
 import { CommandsRepository } from './commands.repository';
 import { CommandsService } from './commands.service';
-import { AddFavouriteHandler } from './handlers/add-favourite.handler';
-import { RemoveFavouriteHandler } from './handlers/remove-favourite.handler';
-import { SynchronousCommandProcessor } from './synchronous-command-processor';
+import { QueueCommandProcessor } from './queue-command-processor';
 
+// AddFavouriteHandler/RemoveFavouriteHandler and the handler registry live in
+// WorkerModule now — the API process only enqueues; it never runs a handler.
 @Module({
+  imports: [QueueModule],
   controllers: [CommandsController],
-  providers: [
-    CommandsService,
-    CommandsRepository,
-    AddFavouriteHandler,
-    RemoveFavouriteHandler,
-    {
-      provide: COMMAND_HANDLER,
-      useFactory: (add: AddFavouriteHandler, remove: RemoveFavouriteHandler) => [add, remove],
-      inject: [AddFavouriteHandler, RemoveFavouriteHandler],
-    },
-    CommandHandlerRegistry,
-    { provide: COMMAND_PROCESSOR, useClass: SynchronousCommandProcessor },
-  ],
+  providers: [CommandsService, CommandsRepository, { provide: COMMAND_PROCESSOR, useClass: QueueCommandProcessor }],
   exports: [CommandsService],
 })
 export class CommandsModule {}

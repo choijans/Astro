@@ -38,10 +38,28 @@ export class CommandsRepository {
     });
   }
 
+  /** Marks the start of one worker attempt: PROCESSING, with attempts incremented
+   * exactly once per attempt. markFailed doesn't increment again. */
+  async markProcessing(id: string): Promise<Command> {
+    return this.prisma.command.update({
+      where: { id },
+      data: { status: 'PROCESSING', attempts: { increment: 1 } },
+    });
+  }
+
+  /** Mid-retry failure: back to PENDING so the command's own state reflects
+   * "not yet resolved" while BullMQ's backoff schedules the next attempt. */
+  async markPendingForRetry(id: string): Promise<Command> {
+    return this.prisma.command.update({
+      where: { id },
+      data: { status: 'PENDING' },
+    });
+  }
+
   async markFailed(id: string, error: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'FAILED', error, processedAt: new Date(), attempts: { increment: 1 } },
+      data: { status: 'FAILED', error, processedAt: new Date() },
     });
   }
 

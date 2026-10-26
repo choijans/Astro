@@ -21,6 +21,28 @@ Status: repo scaffolding in progress. See `docs/prd.md` for the product requirem
 Seeding/sync: `npm run seed` loads the committed fixture; `npm run sync` pulls fresh data from
 the live Astro endpoint. Both are idempotent upserts.
 
+## Running the worker
+
+Favourite/command processing happens on a separate worker process, not inline in the API. Run
+both, in two terminals:
+
+```
+# terminal 1
+cd backend && npm run start:dev
+
+# terminal 2
+cd backend && npm run start:worker:dev
+```
+
+`POST /favourites` (and `POST /commands`) return `202` with the command `PENDING` immediately —
+the actual add/remove happens once the worker picks the job up. **Without the worker running,
+every command stays `PENDING` forever**; starting the worker afterward processes whatever's
+still pending. `npm run start:worker` is the same thing without `--watch`, for a one-off run.
+
+Redis (from `docker compose up -d`) is required for the worker and for the e2e test suite —
+`npm run test:e2e` starts its own worker instance against a dedicated test queue name and Redis
+database (`QUEUE_NAME`/`REDIS_DB` in `.env.test`), separate from dev's, so the two never interleave.
+
 ## Running the frontend
 
 1. Copy the frontend values from `.env.example` into `frontend/.env.local` (just
@@ -42,10 +64,13 @@ the live Astro endpoint. Both are idempotent upserts.
   errors (e.g. 404s) and an **array of strings** for `ValidationPipe` failures (standard Nest
   behavior). Any client reading error responses — including the frontend's error handler — must
   accept both.
-- Command handlers (`AddFavouriteHandler`/`RemoveFavouriteHandler`) call `PrismaService` directly
-  instead of going through a repository, since each handler's effect is a single, self-contained
-  idempotent write and `PrismaModule` is global — a repository layer here would only forward the
-  call without adding anything.
+- Command handlers (`AddFavouriteHandler`/`RemoveFavouriteHandler`) write through the
+  `Prisma.TransactionClient` the worker passes into `handle()`, not an injected `PrismaService`.
+  The worker runs each ADD_FAVORITE/REMOVE_FAVORITE inside a `pg_advisory_xact_lock`-guarded
+  transaction (locked on a key derived from `(userId, channelId)`) so the "is this command
+  superseded by an already-applied, higher-seq command for the same channel" check and the
+  handler's actual write happen atomically — two jobs for the same (user, channel) can't both
+  pass the check before either commits.
 
 ## How I built this
 

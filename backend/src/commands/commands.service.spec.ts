@@ -76,6 +76,30 @@ describe('CommandsService.enqueue', () => {
     expect(processor.process).not.toHaveBeenCalled();
   });
 
+  it('a FAILED replay also returns as-is without touching the processor', async () => {
+    const { repository, processor } = createMocks();
+    const existing = makeCommand({ status: 'FAILED', error: 'boom' });
+    (repository.findById as jest.Mock).mockResolvedValue(existing);
+    const service = new CommandsService(repository, processor);
+
+    const result = await service.enqueue({ id: 'cmd-1', userId: 'user-1', type: 'ADD_FAVORITE', channelId: 42 });
+
+    expect(result).toBe(existing);
+    expect(processor.process).not.toHaveBeenCalled();
+  });
+
+  it('a replay of a still-PENDING command retries the job add (safe via jobId)', async () => {
+    const { repository, processor } = createMocks();
+    const existing = makeCommand({ status: 'PENDING' });
+    (repository.findById as jest.Mock).mockResolvedValue(existing);
+    const service = new CommandsService(repository, processor);
+
+    const result = await service.enqueue({ id: 'cmd-1', userId: 'user-1', type: 'ADD_FAVORITE', channelId: 42 });
+
+    expect(processor.process).toHaveBeenCalledWith(existing);
+    expect(result.status).toBe('DONE'); // whatever the processor mock returns
+  });
+
   it('rejects the same id from a different user with 409', async () => {
     const { repository, processor } = createMocks();
     (repository.findById as jest.Mock).mockResolvedValue(makeCommand({ userId: 'user-1' }));
