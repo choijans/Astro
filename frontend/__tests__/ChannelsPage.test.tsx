@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChannelsPage } from '../components/ChannelsPage';
+import { LAST_CHANNELS_URL_KEY } from '../hooks/useChannelUrlState';
 import { getChannelFilters, getChannels } from '../lib/api';
 
 const mockPush = jest.fn();
@@ -33,6 +34,7 @@ const emptyPage = { data: [], page: 1, limit: 24, total: 0, hasNextPage: false }
 beforeEach(() => {
   mockSearch = '';
   mockPush.mockClear();
+  sessionStorage.clear();
   (getChannelFilters as jest.Mock).mockResolvedValue({
     categories: ['Sports'],
     languages: ['malay'],
@@ -69,6 +71,14 @@ describe('ChannelsPage', () => {
     await user.selectOptions(screen.getByLabelText('Sort by'), 'title');
 
     expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('sort=title'), expect.anything());
+  });
+
+  it('records its current URL (filters included) for BackToChannelsLink to return to', async () => {
+    mockSearch = 'category=Sports&sort=title';
+    renderPage();
+    await screen.findByText('No channels found');
+
+    expect(sessionStorage.getItem(LAST_CHANNELS_URL_KEY)).toBe('/?category=Sports&sort=title');
   });
 
   it('requests using the sort and order already in the URL on load', async () => {

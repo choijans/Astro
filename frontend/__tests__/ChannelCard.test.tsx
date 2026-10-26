@@ -1,6 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { ChannelCard } from '../components/ChannelCard';
 import { ChannelListItem } from '../lib/api';
+import { renderWithQueryClient } from '../testing/test-utils';
+
+jest.mock('../lib/api', () => ({
+  ...jest.requireActual('../lib/api'),
+  getFavourites: jest.fn().mockResolvedValue([]),
+}));
 
 function makeChannel(overrides: Partial<ChannelListItem> = {}): ChannelListItem {
   return {
@@ -25,19 +31,19 @@ function makeChannel(overrides: Partial<ChannelListItem> = {}): ChannelListItem 
 
 describe('ChannelCard', () => {
   it('renders the subtitle exactly as given, even when it is not "CH n"', () => {
-    render(<ChannelCard channel={makeChannel({ subtitle: 'Astro GO Channel' })} />);
+    renderWithQueryClient(<ChannelCard channel={makeChannel({ subtitle: 'Astro GO Channel' })} />);
     expect(screen.getByText('Astro GO Channel')).toBeInTheDocument();
   });
 
   it('shows a quiet "Schedule not available" when now and next are both null', () => {
-    render(<ChannelCard channel={makeChannel({ now: null, next: null })} />);
+    renderWithQueryClient(<ChannelCard channel={makeChannel({ now: null, next: null })} />);
     expect(screen.getByText('Schedule not available')).toBeInTheDocument();
     expect(screen.queryByText(/Now:/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
   });
 
   it('shows the now show title and the next show when present', () => {
-    render(
+    renderWithQueryClient(
       <ChannelCard
         channel={makeChannel({
           now: { title: 'Show A', start: '2026-01-01T08:00:00+08:00', end: '2026-01-01T09:00:00+08:00' },
@@ -51,10 +57,24 @@ describe('ChannelCard', () => {
   });
 
   it('shows the title as the full-text title attribute for the two-line clamp', () => {
-    render(<ChannelCard channel={makeChannel({ title: 'A Very Long Channel Title That Gets Clamped' })} />);
+    renderWithQueryClient(<ChannelCard channel={makeChannel({ title: 'A Very Long Channel Title That Gets Clamped' })} />);
     expect(screen.getByText('A Very Long Channel Title That Gets Clamped')).toHaveAttribute(
       'title',
       'A Very Long Channel Title That Gets Clamped',
     );
+  });
+
+  it('links to the channel details page', () => {
+    renderWithQueryClient(<ChannelCard channel={makeChannel({ id: 42 })} />);
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/channels/42');
+  });
+
+  it('renders the favourite heart as a sibling of the link, not nested inside it', () => {
+    renderWithQueryClient(<ChannelCard channel={makeChannel({ id: 42, title: 'Astro30' })} />);
+    const link = screen.getByRole('link');
+    const heart = screen.getByRole('button', { name: 'Add Astro30 to favourites' });
+    // A <button> nested inside an <a> is invalid HTML and confusing for
+    // screen readers, so the heart must not be a descendant of the link.
+    expect(link).not.toContainElement(heart);
   });
 });

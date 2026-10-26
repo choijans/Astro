@@ -1,8 +1,13 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { SortField, SortOrder } from '../lib/api';
+
+/** Read by BackToChannelsLink, so "back" lands on this exact list URL rather
+ * than relying on browser history (which may leave the app entirely if the
+ * details page was opened from an external referrer). */
+export const LAST_CHANNELS_URL_KEY = 'astro:lastChannelsUrl';
 
 export interface ChannelUrlState {
   q: string;
@@ -54,6 +59,17 @@ export function useChannelUrlState() {
     }),
     [searchParams],
   );
+
+  useEffect(() => {
+    const queryString = searchParams.toString();
+    const url = queryString ? `${pathname}?${queryString}` : pathname;
+    try {
+      sessionStorage.setItem(LAST_CHANNELS_URL_KEY, url);
+    } catch {
+      // Private browsing / storage disabled — BackToChannelsLink just falls
+      // back to "/" in that case.
+    }
+  }, [pathname, searchParams]);
 
   const setState = useCallback(
     (patch: Partial<ChannelUrlState>) => {

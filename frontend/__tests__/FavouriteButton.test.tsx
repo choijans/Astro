@@ -1,0 +1,209 @@
+import { act, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { FavouriteButton } from '../components/FavouriteButton';
+import { addFavourite, ApiError, ChannelListItem, CommandResponse, getFavourites, removeFavourite } from '../lib/api';
+import { renderWithQueryClient } from '../testing/test-utils';
+
+jest.mock('../lib/api', () => ({
+  ...jest.requireActual('../lib/api'),
+  getFavourites: jest.fn(),
+  addFavourite: jest.fn(),
+  removeFavourite: jest.fn(),
+}));
+
+function makeCommand(overrides: Partial<CommandResponse> = {}): CommandResponse {
+  return {
+    id: 'cmd-1',
+    seq: '1',
+    userId: 'user-1',
+    type: 'ADD_FAVORITE',
+    channelId: 1,
+    status: 'DONE',
+    error: null,
+    createdAt: '2026-01-01T00:00:00Z',
+    processedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function makeFavourite(overrides: Partial<ChannelListItem> = {}): ChannelListItem {
+  return {
+    id: 1,
+    title: 'Astro30',
+    subtitle: 'CH 30',
+    stbNumber: 30,
+    imageUrl: 'https://divign0fdw3sv.cloudfront.net/logo.png',
+    category: 'News',
+    genres: ['news'],
+    languages: ['others'],
+    rangeKey: '0_199',
+    ranking: 1,
+    scheduleUpdatedAt: '2026-01-01T00:00:00Z',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    now: null,
+    next: null,
+    ...overrides,
+  };
+}
+
+// The real GET /favourites reflects a write as soon as the synchronous
+// command resolves, so the mock must behave the same way: it reads from
+// this mutable array rather than a value frozen at mock-setup time.
+// Without this, onSettled's invalidateQueries refetch would overwrite the
+// optimistic cache update with a stale `[]` before any assertion runs.
+let favouritesState: ChannelListItem[] = [];
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  favouritesState = [];
+  (getFavourites as jest.Mock).mockImplementation(() => Promise.resolve(favouritesState));
+});
+
+describe('FavouriteButton', () => {
+  it('flips immediately (optimistic) and calls POST /favourites with a UUID X-Command-Id', async () => {
+    (addFavourite as jest.Mock).mockImplementation(async () => {
+      favouritesState = [...favouritesState, makeFavourite()];
+      return makeCommand();
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    const button = await screen.findByRole('button', { name: 'Add Astro30 to favourites' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(button);
+
+    // Flips optimistically — it ends up flipped well before the mocked
+    // network call would ever resolve for real; findByRole/waitFor is used
+    // instead of a synchronous assertion since React may commit this update
+    // on a later microtask than the one `await user.click()` itself flushes.
+    expect(
+      await screen.findByRole('button', { name: 'Remove Astro30 from favourites' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    expect(addFavourite).toHaveBeenCalledTimes(1);
+    const [calledChannelId, commandId] = (addFavourite as jest.Mock).mock.calls[0];
+    expect(calledChannelId).toBe(1);
+    expect(commandId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  });
+
+  it('sends a different X-Command-Id on every click', async () => {
+    (addFavourite as jest.Mock).mockImplementation(async () => {
+      favouritesState = [...favouritesState, makeFavourite()];
+      return makeCommand();
+    });
+    (removeFavourite as jest.Mock).mockImplementation(async () => {
+      favouritesState = favouritesState.filter((channel) => channel.id !== 1);
+      return makeCommand({ type: 'REMOVE_FAVORITE' });
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+    await waitFor(() => expect(addFavourite).toHaveBeenCalledTimes(1));
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Astro30 from favourites' }));
+    await waitFor(() => expect(removeFavourite).toHaveBeenCalledTimes(1));
+
+    const addCommandId = (addFavourite as jest.Mock).mock.calls[0][1];
+    const removeCommandId = (removeFavourite as jest.Mock).mock.calls[0][1];
+    expect(addCommandId).not.toBe(removeCommandId);
+  });
+
+  it('rolls back and shows the message on an HTTP error', async () => {
+    (addFavourite as jest.Mock).mockRejectedValue(new ApiError('Internal server error', 500));
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    // The optimistic flip and the rollback both happen within this one click
+    // (the mock rejects immediately), so only the settled end state — rolled
+    // back to "Add" — is reliably observable here; the transient flip itself
+    // is covered by the success-path test above and the in-flight test below.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Internal server error');
+  });
+
+  it('rolls back when the command settles as FAILED, even though the HTTP call itself succeeded', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Channel does not exist');
+  });
+
+  it('ignores further clicks on the same channel while a mutation is in flight', async () => {
+    let resolveAdd: (command: CommandResponse) => void = () => {};
+    (addFavourite as jest.Mock).mockReturnValue(
+      new Promise<CommandResponse>((resolve) => {
+        resolveAdd = resolve;
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    const button = await screen.findByRole('button', { name: 'Add Astro30 to favourites' });
+    await user.click(button);
+    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button'));
+
+    expect(addFavourite).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveAdd(makeCommand());
+    });
+  });
+
+  it('is keyboard operable and exposes aria-pressed', async () => {
+    (addFavourite as jest.Mock).mockImplementation(async () => {
+      favouritesState = [...favouritesState, makeFavourite()];
+      return makeCommand();
+    });
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    const button = await screen.findByRole('button', { name: 'Add Astro30 to favourites' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+
+    await user.tab(); // moves focus to the only focusable element: the button
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(addFavourite).toHaveBeenCalledTimes(1));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove Astro30 from favourites' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    );
+  });
+
+  it('does not navigate: a click never reaches a wrapping link', async () => {
+    (addFavourite as jest.Mock).mockResolvedValue(makeCommand());
+    const user = userEvent.setup();
+    const onLinkClick = jest.fn();
+
+    renderWithQueryClient(
+      // A plain anchor here only stands in for "any wrapping link", same shape as ChannelCard's.
+      // eslint-disable-next-line @next/next/no-html-link-for-pages
+      <a href="/channels/1" onClick={onLinkClick}>
+        <FavouriteButton channelId={1} channelTitle="Astro30" />
+      </a>,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    expect(onLinkClick).not.toHaveBeenCalled();
+  });
+});
