@@ -10,7 +10,12 @@ export class AddFavouriteHandler implements ICommandHandler {
   /** Adding an already-favourited channel is a no-op success, not an error. */
   async handle(command: Command, tx: Prisma.TransactionClient): Promise<void> {
     await tx.favourite.upsert({
-      where: { userId_channelId: { userId: command.userId, channelId: command.channelId } },
+      where: {
+        userId_channelId: {
+          userId: command.userId,
+          channelId: command.channelId,
+        },
+      },
       create: { userId: command.userId, channelId: command.channelId },
       update: {},
     });

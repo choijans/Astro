@@ -7,7 +7,9 @@ import { AstroChannelRecord, AstroSearchLinearResponse } from './astro.types';
  * Shared by HttpAstroClient (live) and FixtureAstroClient (seed/tests) so both
  * paths apply the exact same validation.
  */
-export function parseAstroEnvelope(body: AstroSearchLinearResponse): AstroChannelRecord[] {
+export function parseAstroEnvelope(
+  body: AstroSearchLinearResponse,
+): AstroChannelRecord[] {
   if (body.responseCode !== 200) {
     throw new AstroApiError(
       `Astro responded with responseCode ${body.responseCode}: ${body.responseMessage}`,

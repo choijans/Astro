@@ -41,7 +41,9 @@ describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    workerApp = await Test.createTestingModule({ imports: [WorkerModule] }).compile();
+    workerApp = await Test.createTestingModule({
+      imports: [WorkerModule],
+    }).compile();
     await workerApp.init();
   });
 
@@ -52,7 +54,10 @@ describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
   });
 
   it('GET /channels includes now and next, and never the full schedule', async () => {
-    const res = await request(app.getHttpServer()).get('/channels').query({ q: 'Astro30' }).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/channels')
+      .query({ q: 'Astro30' })
+      .expect(200);
 
     const item = res.body.data.find((c: { id: number }) => c.id === CHANNEL_ID);
     expect(item).toBeDefined();
@@ -70,7 +75,10 @@ describe('now/next (e2e, clock fixed inside a real schedule window)', () => {
 
     await pollCommand(app, userId, addRes.body.id);
 
-    const res = await request(app.getHttpServer()).get('/favourites').set('X-User-Id', userId).expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/favourites')
+      .set('X-User-Id', userId)
+      .expect(200);
 
     const item = res.body.find((c: { id: number }) => c.id === CHANNEL_ID);
     expect(item).toBeDefined();

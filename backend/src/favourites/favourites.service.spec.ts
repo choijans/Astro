@@ -20,7 +20,11 @@ function createMocks() {
 describe('FavouritesService', () => {
   it('add() enqueues an ADD_FAVORITE command through CommandsService.enqueue — no other write path', async () => {
     const { commandsService, favouritesRepository, clock } = createMocks();
-    const service = new FavouritesService(commandsService, favouritesRepository, clock);
+    const service = new FavouritesService(
+      commandsService,
+      favouritesRepository,
+      clock,
+    );
 
     await service.add('user-1', 42, 'cmd-1');
 
@@ -34,7 +38,11 @@ describe('FavouritesService', () => {
 
   it('remove() enqueues a REMOVE_FAVORITE command through the same CommandsService.enqueue', async () => {
     const { commandsService, favouritesRepository, clock } = createMocks();
-    const service = new FavouritesService(commandsService, favouritesRepository, clock);
+    const service = new FavouritesService(
+      commandsService,
+      favouritesRepository,
+      clock,
+    );
 
     await service.remove('user-1', 42, 'cmd-2');
 
@@ -48,7 +56,11 @@ describe('FavouritesService', () => {
 
   it('list() reads through FavouritesRepository, not CommandsService', async () => {
     const { commandsService, favouritesRepository, clock } = createMocks();
-    const service = new FavouritesService(commandsService, favouritesRepository, clock);
+    const service = new FavouritesService(
+      commandsService,
+      favouritesRepository,
+      clock,
+    );
 
     await service.list('user-1');
 

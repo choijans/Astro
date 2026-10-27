@@ -20,4 +20,4 @@ async function main(): Promise<void> {
   console.log(`Sync upserted ${result.upserted} channels.`);
 }
 
-main();
+void main();

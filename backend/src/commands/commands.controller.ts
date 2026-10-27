@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { UserId } from '../common/user-id.decorator';
 import { UserIdGuard } from '../common/user-id.guard';
 import { CommandsService } from './commands.service';
@@ -23,7 +32,10 @@ export class CommandsController {
   }
 
   @Get(':id')
-  async getStatus(@Param('id', new ParseUUIDPipe()) id: string, @UserId() userId: string) {
+  async getStatus(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @UserId() userId: string,
+  ) {
     const command = await this.commandsService.getStatus(id, userId);
     return toCommandResponse(command);
   }

@@ -1,7 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { CommandsRepository } from '../commands/commands.repository';
 import { JobEnqueuerService } from './job-enqueuer.service';
-import { getProcessingStaleMs, getSweepBatchSize, SWEEP_GRACE_MS } from './queue.config';
+import {
+  getProcessingStaleMs,
+  getSweepBatchSize,
+  SWEEP_GRACE_MS,
+} from './queue.config';
 
 /**
  * Covers Redis being down (or unreachable) at the moment a command was first
@@ -54,7 +58,9 @@ export class RecoverySweepService implements OnModuleInit {
         this.logger.log(`Recovery sweep re-enqueued ${reEnqueued} command(s)`);
       }
       if (recovered > 0) {
-        this.logger.log(`Recovery sweep recovered ${recovered} stale PROCESSING command(s)`);
+        this.logger.log(
+          `Recovery sweep recovered ${recovered} stale PROCESSING command(s)`,
+        );
       }
     } catch (err) {
       this.logger.error(
@@ -98,7 +104,9 @@ export class RecoverySweepService implements OnModuleInit {
 
     let recovered = 0;
     for (const command of commands) {
-      const readiness = await this.jobEnqueuer.prepareStaleJobForReenqueue(command.id);
+      const readiness = await this.jobEnqueuer.prepareStaleJobForReenqueue(
+        command.id,
+      );
       if (readiness === 'still-active') {
         this.logger.log(
           `Command ${command.id} has been PROCESSING longer than the stale threshold, but BullMQ still shows an active job for it; leaving it alone`,

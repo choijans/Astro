@@ -22,10 +22,12 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
     processedAt: null,
     processingStartedAt: null,
     ...overrides,
-  } as Command;
+  };
 }
 
-function makeJob(overrides: Partial<Job<CommandJobData>> = {}): Job<CommandJobData> {
+function makeJob(
+  overrides: Partial<Job<CommandJobData>> = {},
+): Job<CommandJobData> {
   return {
     id: 'job-1',
     data: { commandId: 'cmd-1' },
@@ -67,7 +69,9 @@ function createMocks(options: { supersededBy?: Command | null } = {}) {
   } as unknown as CommandHandlerRegistry;
 
   const prisma = {
-    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<void>) => fn(tx)),
+    $transaction: jest
+      .fn()
+      .mockImplementation((fn: (tx: unknown) => Promise<void>) => fn(tx)),
   } as unknown as PrismaService;
 
   return { tx, commandsRepository, handler, registry, prisma };
@@ -84,59 +88,100 @@ describe('CommandWorkerService', () => {
     const pending = makeCommand({ status: 'PENDING' });
     const processing = makeCommand({ status: 'PROCESSING', attempts: 1 });
     (commandsRepository.findById as jest.Mock).mockResolvedValue(pending);
-    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(processing);
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(
+      processing,
+    );
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
     await (service as unknown as WithProcessJob).processJob(makeJob());
 
     expect(commandsRepository.markProcessing).toHaveBeenCalledWith('cmd-1');
     expect(handler.handle).toHaveBeenCalledWith(processing, tx);
     expect(tx.command.update).toHaveBeenCalledWith({
       where: { id: 'cmd-1' },
-      data: { status: 'DONE', processedAt: expect.any(Date), processingStartedAt: null },
+      data: {
+        status: 'DONE',
+        processedAt: expect.any(Date),
+        processingStartedAt: null,
+      },
     });
   });
 
   it('a handler failure with attempts left sets the command back to PENDING and rethrows', async () => {
     const { commandsRepository, handler, registry, prisma } = createMocks();
-    (commandsRepository.findById as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
-    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(makeCommand({ status: 'PROCESSING' }));
+    (commandsRepository.findById as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PENDING' }),
+    );
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PROCESSING' }),
+    );
     (handler.handle as jest.Mock).mockRejectedValue(new Error('transient'));
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
 
     await expect(
-      (service as unknown as WithProcessJob).processJob(makeJob({ attemptsMade: 2, opts: { attempts: 6 } })),
+      (service as unknown as WithProcessJob).processJob(
+        makeJob({ attemptsMade: 2, opts: { attempts: 6 } }),
+      ),
     ).rejects.toThrow('transient');
 
-    expect(commandsRepository.markPendingForRetry).toHaveBeenCalledWith('cmd-1');
+    expect(commandsRepository.markPendingForRetry).toHaveBeenCalledWith(
+      'cmd-1',
+    );
     expect(commandsRepository.markFailed).not.toHaveBeenCalled();
   });
 
   it('a handler failure on the final attempt marks the command FAILED with the error text, and still rethrows', async () => {
     const { commandsRepository, handler, registry, prisma } = createMocks();
-    (commandsRepository.findById as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
-    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(makeCommand({ status: 'PROCESSING' }));
+    (commandsRepository.findById as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PENDING' }),
+    );
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PROCESSING' }),
+    );
     (handler.handle as jest.Mock).mockRejectedValue(new Error('still broken'));
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
 
     // BullMQ doesn't increment attemptsMade until after this call returns, so
     // attemptsMade=5 here means "the 6th attempt is the one running now" —
     // the last one opts.attempts: 6 allows.
     await expect(
-      (service as unknown as WithProcessJob).processJob(makeJob({ attemptsMade: 5, opts: { attempts: 6 } })),
+      (service as unknown as WithProcessJob).processJob(
+        makeJob({ attemptsMade: 5, opts: { attempts: 6 } }),
+      ),
     ).rejects.toThrow('still broken');
 
-    expect(commandsRepository.markFailed).toHaveBeenCalledWith('cmd-1', 'still broken');
+    expect(commandsRepository.markFailed).toHaveBeenCalledWith(
+      'cmd-1',
+      'still broken',
+    );
     expect(commandsRepository.markPendingForRetry).not.toHaveBeenCalled();
   });
 
   it('skips a duplicate delivery of an already-DONE command without touching the handler', async () => {
     const { commandsRepository, handler, registry, prisma } = createMocks();
-    (commandsRepository.findById as jest.Mock).mockResolvedValue(makeCommand({ status: 'DONE' }));
+    (commandsRepository.findById as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'DONE' }),
+    );
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
     await (service as unknown as WithProcessJob).processJob(makeJob());
 
     expect(commandsRepository.markProcessing).not.toHaveBeenCalled();
@@ -146,9 +191,15 @@ describe('CommandWorkerService', () => {
 
   it('skips a duplicate delivery of an already-FAILED command without touching the handler', async () => {
     const { commandsRepository, handler, registry, prisma } = createMocks();
-    (commandsRepository.findById as jest.Mock).mockResolvedValue(makeCommand({ status: 'FAILED', error: 'x' }));
+    (commandsRepository.findById as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'FAILED', error: 'x' }),
+    );
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
     await (service as unknown as WithProcessJob).processJob(makeJob());
 
     expect(handler.handle).not.toHaveBeenCalled();
@@ -156,18 +207,31 @@ describe('CommandWorkerService', () => {
 
   it('skips a command superseded by an already-applied higher-seq command, marking it DONE without running the handler', async () => {
     const supersededBy = makeCommand({ id: 'cmd-2', seq: 5n, status: 'DONE' });
-    const { commandsRepository, handler, registry, prisma, tx } = createMocks({ supersededBy });
+    const { commandsRepository, handler, registry, prisma, tx } = createMocks({
+      supersededBy,
+    });
     const command = makeCommand({ id: 'cmd-1', seq: 1n, status: 'PENDING' });
     (commandsRepository.findById as jest.Mock).mockResolvedValue(command);
-    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue({ ...command, status: 'PROCESSING' });
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue({
+      ...command,
+      status: 'PROCESSING',
+    });
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
     await (service as unknown as WithProcessJob).processJob(makeJob());
 
     expect(handler.handle).not.toHaveBeenCalled();
     expect(tx.command.update).toHaveBeenCalledWith({
       where: { id: 'cmd-1' },
-      data: { status: 'DONE', processedAt: expect.any(Date), processingStartedAt: null },
+      data: {
+        status: 'DONE',
+        processedAt: expect.any(Date),
+        processingStartedAt: null,
+      },
     });
   });
 
@@ -175,9 +239,16 @@ describe('CommandWorkerService', () => {
     const { commandsRepository, handler, registry, prisma, tx } = createMocks();
     const command = makeCommand({ type: 'REFRESH_CHANNEL' as Command['type'] });
     (commandsRepository.findById as jest.Mock).mockResolvedValue(command);
-    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue({ ...command, status: 'PROCESSING' });
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue({
+      ...command,
+      status: 'PROCESSING',
+    });
 
-    const service = new CommandWorkerService(commandsRepository, registry, prisma);
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
     await (service as unknown as WithProcessJob).processJob(makeJob());
 
     expect(tx.$executeRaw).not.toHaveBeenCalled();

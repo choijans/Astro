@@ -2,7 +2,9 @@ import { AstroApiError } from './astro-client.interface';
 import { parseAstroEnvelope } from './astro-envelope';
 import { AstroSearchLinearResponse } from './astro.types';
 
-function makeResponse(overrides: Partial<AstroSearchLinearResponse> = {}): AstroSearchLinearResponse {
+function makeResponse(
+  overrides: Partial<AstroSearchLinearResponse> = {},
+): AstroSearchLinearResponse {
   return {
     responseCode: 200,
     responseMessage: 'OK',
@@ -33,7 +35,10 @@ describe('parseAstroEnvelope', () => {
   });
 
   it('throws AstroApiError on a bad responseCode', () => {
-    const body = makeResponse({ responseCode: 500, responseMessage: 'Internal error' });
+    const body = makeResponse({
+      responseCode: 500,
+      responseMessage: 'Internal error',
+    });
     expect(() => parseAstroEnvelope(body)).toThrow(AstroApiError);
   });
 });

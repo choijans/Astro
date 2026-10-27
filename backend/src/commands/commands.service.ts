@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import type { Command, CommandType } from '../../generated/prisma/client';
 import { COMMAND_PROCESSOR } from './command-processor.interface';
@@ -8,7 +14,10 @@ import { CommandsRepository } from './commands.repository';
 const UNIQUE_CONSTRAINT_VIOLATION = 'P2002';
 
 function isUniqueConstraintViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === UNIQUE_CONSTRAINT_VIOLATION;
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === UNIQUE_CONSTRAINT_VIOLATION
+  );
 }
 
 export interface EnqueueParams {
@@ -36,7 +45,9 @@ export class CommandsService {
       return this.reconcileWithExisting(existing, params);
     }
 
-    const channelExists = await this.commandsRepository.channelExists(params.channelId);
+    const channelExists = await this.commandsRepository.channelExists(
+      params.channelId,
+    );
     if (!channelExists) {
       throw new NotFoundException(`Channel ${params.channelId} not found`);
     }
@@ -66,12 +77,22 @@ export class CommandsService {
     return this.processor.process(created);
   }
 
-  private async reconcileWithExisting(existing: Command, params: EnqueueParams): Promise<Command> {
+  private async reconcileWithExisting(
+    existing: Command,
+    params: EnqueueParams,
+  ): Promise<Command> {
     if (existing.userId !== params.userId) {
-      throw new ConflictException('This command id was already used by a different user');
+      throw new ConflictException(
+        'This command id was already used by a different user',
+      );
     }
-    if (existing.type !== params.type || existing.channelId !== params.channelId) {
-      throw new ConflictException('This command id was already used with a different payload');
+    if (
+      existing.type !== params.type ||
+      existing.channelId !== params.channelId
+    ) {
+      throw new ConflictException(
+        'This command id was already used with a different payload',
+      );
     }
     if (existing.status === 'PENDING') {
       // Still unresolved: retry the job add. Safe because the job id is the

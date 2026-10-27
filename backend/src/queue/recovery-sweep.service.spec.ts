@@ -139,8 +139,12 @@ describe('RecoverySweepService — stale PROCESSING recovery', () => {
 
     await service(commandsRepository, jobEnqueuer).runPass();
 
-    expect(jobEnqueuer.prepareStaleJobForReenqueue).toHaveBeenCalledWith('stale-1');
-    expect(commandsRepository.resetStaleProcessingToPending).toHaveBeenCalledWith('stale-1');
+    expect(jobEnqueuer.prepareStaleJobForReenqueue).toHaveBeenCalledWith(
+      'stale-1',
+    );
+    expect(
+      commandsRepository.resetStaleProcessingToPending,
+    ).toHaveBeenCalledWith('stale-1');
     expect(jobEnqueuer.enqueue).toHaveBeenCalledWith(stale);
   });
 
@@ -160,18 +164,24 @@ describe('RecoverySweepService — stale PROCESSING recovery', () => {
 
     await service(commandsRepository, jobEnqueuer).runPass();
 
-    expect(commandsRepository.resetStaleProcessingToPending).not.toHaveBeenCalled();
+    expect(
+      commandsRepository.resetStaleProcessingToPending,
+    ).not.toHaveBeenCalled();
     expect(jobEnqueuer.prepareStaleJobForReenqueue).not.toHaveBeenCalled();
   });
 
   it('leaves a stale PROCESSING command alone (no reset, no re-add) when BullMQ still shows an active job for it', async () => {
     const stale = makeCommand({ id: 'stale-1', status: 'PROCESSING' });
     const { commandsRepository, jobEnqueuer } = createMocks([], [stale]);
-    (jobEnqueuer.prepareStaleJobForReenqueue as jest.Mock).mockResolvedValue('still-active');
+    (jobEnqueuer.prepareStaleJobForReenqueue as jest.Mock).mockResolvedValue(
+      'still-active',
+    );
 
     await service(commandsRepository, jobEnqueuer).runPass();
 
-    expect(commandsRepository.resetStaleProcessingToPending).not.toHaveBeenCalled();
+    expect(
+      commandsRepository.resetStaleProcessingToPending,
+    ).not.toHaveBeenCalled();
     expect(jobEnqueuer.enqueue).not.toHaveBeenCalled();
   });
 
@@ -184,10 +194,11 @@ describe('RecoverySweepService — stale PROCESSING recovery', () => {
     // prepareStaleJobForReenqueue is called (and awaited) strictly before the
     // reset + re-add, so by the time those run any leftover finished/failed
     // job has already been removed.
-    const prepareOrder = (jobEnqueuer.prepareStaleJobForReenqueue as jest.Mock).mock
-      .invocationCallOrder[0];
-    const resetOrder = (commandsRepository.resetStaleProcessingToPending as jest.Mock).mock
-      .invocationCallOrder[0];
+    const prepareOrder = (jobEnqueuer.prepareStaleJobForReenqueue as jest.Mock)
+      .mock.invocationCallOrder[0];
+    const resetOrder = (
+      commandsRepository.resetStaleProcessingToPending as jest.Mock
+    ).mock.invocationCallOrder[0];
     expect(prepareOrder).toBeLessThan(resetOrder);
   });
 
@@ -204,11 +215,18 @@ describe('RecoverySweepService — stale PROCESSING recovery', () => {
     await service(commandsRepository, jobEnqueuer).runPass();
 
     expect(jobEnqueuer.prepareStaleJobForReenqueue).toHaveBeenCalledTimes(2);
-    expect(commandsRepository.resetStaleProcessingToPending).toHaveBeenCalledTimes(1);
-    expect(commandsRepository.resetStaleProcessingToPending).toHaveBeenCalledWith('b');
+    expect(
+      commandsRepository.resetStaleProcessingToPending,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      commandsRepository.resetStaleProcessingToPending,
+    ).toHaveBeenCalledWith('b');
   });
 });
 
-function service(commandsRepository: CommandsRepository, jobEnqueuer: JobEnqueuerService) {
+function service(
+  commandsRepository: CommandsRepository,
+  jobEnqueuer: JobEnqueuerService,
+) {
   return new RecoverySweepService(commandsRepository, jobEnqueuer);
 }

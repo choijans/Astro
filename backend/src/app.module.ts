@@ -8,7 +8,13 @@ import { FavouritesModule } from './favourites/favourites.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
-  imports: [PrismaModule, ClockModule, ChannelsModule, CommandsModule, FavouritesModule],
+  imports: [
+    PrismaModule,
+    ClockModule,
+    ChannelsModule,
+    CommandsModule,
+    FavouritesModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

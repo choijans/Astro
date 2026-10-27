@@ -7,7 +7,9 @@ function createPrismaMock(): PrismaService {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
     },
-    $transaction: jest.fn().mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+    $transaction: jest
+      .fn()
+      .mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   } as unknown as PrismaService;
 }
 
@@ -36,7 +38,9 @@ describe('ChannelsRepository.findMany — q boundary handling', () => {
     await repo.findMany({ ...baseParams, q: '99999999999999' });
 
     const where = (prisma.channel.findMany as jest.Mock).mock.calls[0][0].where;
-    expect(where.OR).toEqual([{ title: { contains: '99999999999999', mode: 'insensitive' } }]);
+    expect(where.OR).toEqual([
+      { title: { contains: '99999999999999', mode: 'insensitive' } },
+    ]);
   });
 
   it('treats the Postgres integer boundary values themselves as numeric', async () => {

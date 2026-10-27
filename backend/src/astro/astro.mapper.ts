@@ -9,7 +9,10 @@ import { AstroChannelRecord, MappedChannel } from './astro.types';
  * - isAstroFirstExclusive / isAstroGoExclusive / isRadioExclusive are dropped; unused.
  * - scheduleUpdatedAt is the caller-supplied sync time, since Astro gives no timestamp.
  */
-export function mapAstroChannel(record: AstroChannelRecord, syncedAt: Date): MappedChannel {
+export function mapAstroChannel(
+  record: AstroChannelRecord,
+  syncedAt: Date,
+): MappedChannel {
   return {
     id: record.id,
     title: record.title,

@@ -4,7 +4,8 @@ import { parseAstroEnvelope } from './astro-envelope';
 import { AstroChannelRecord, AstroSearchLinearResponse } from './astro.types';
 
 /** Required to get the envelope this app expects; verified against the real API. */
-const QUERY_STRING = 'channelGuide=true&platform=acm&channelOrderBy=stbNumber,asc';
+const QUERY_STRING =
+  'channelGuide=true&platform=acm&channelOrderBy=stbNumber,asc';
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 @Injectable()
@@ -25,7 +26,9 @@ export class HttpAstroClient implements IAstroClient {
     try {
       response = await fetch(url, { signal: controller.signal });
     } catch (err) {
-      throw new AstroApiError(`Astro request failed: ${(err as Error).message}`);
+      throw new AstroApiError(
+        `Astro request failed: ${(err as Error).message}`,
+      );
     } finally {
       clearTimeout(timer);
     }

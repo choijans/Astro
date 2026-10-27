@@ -4,7 +4,11 @@ import { resolve } from 'node:path';
 import IORedis from 'ioredis';
 import { FixtureAstroClient } from '../astro/fixture-astro-client';
 import { PrismaService } from '../prisma/prisma.service';
-import { assertUsesTestQueue, buildQueueConnectionOptions, getQueueName } from '../queue/queue.config';
+import {
+  assertUsesTestQueue,
+  buildQueueConnectionOptions,
+  getQueueName,
+} from '../queue/queue.config';
 import { SyncService } from '../sync/sync.service';
 
 /**
@@ -17,7 +21,9 @@ import { SyncService } from '../sync/sync.service';
  * run's worker against commands that no longer exist. Run before the
  * Supertest suite, never against dev.
  */
-function assertTargetsTestDatabase(databaseUrl: string | undefined): asserts databaseUrl is string {
+function assertTargetsTestDatabase(
+  databaseUrl: string | undefined,
+): asserts databaseUrl is string {
   if (!databaseUrl || !databaseUrl.includes('/astro_test')) {
     throw new Error(
       `Refusing to prepare a test database: DATABASE_URL must point at "astro_test", got: ${databaseUrl}`,
@@ -26,7 +32,11 @@ function assertTargetsTestDatabase(databaseUrl: string | undefined): asserts dat
 }
 
 async function main(): Promise<void> {
-  config({ path: resolve(process.cwd(), '.env.test'), override: true, quiet: true });
+  config({
+    path: resolve(process.cwd(), '.env.test'),
+    override: true,
+    quiet: true,
+  });
   assertTargetsTestDatabase(process.env.DATABASE_URL);
   assertUsesTestQueue();
 

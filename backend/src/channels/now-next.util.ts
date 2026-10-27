@@ -12,7 +12,11 @@ export interface NowNext {
 }
 
 function toSlot(entry: AstroScheduleEntry): ShowSlot {
-  return { title: entry.title, start: entry.eventStartMyt, end: entry.eventEndMyt };
+  return {
+    title: entry.title,
+    start: entry.eventStartMyt,
+    end: entry.eventEndMyt,
+  };
 }
 
 /**
@@ -22,9 +26,12 @@ function toSlot(entry: AstroScheduleEntry): ShowSlot {
  * (e.g. the stored schedule is stale and entirely in the past).
  */
 export function computeNowNext(schedule: unknown, at: Date): NowNext {
-  const entries = Array.isArray(schedule) ? (schedule as AstroScheduleEntry[]) : [];
+  const entries = Array.isArray(schedule)
+    ? (schedule as AstroScheduleEntry[])
+    : [];
   const sorted = [...entries].sort(
-    (a, b) => new Date(a.eventStartMyt).getTime() - new Date(b.eventStartMyt).getTime(),
+    (a, b) =>
+      new Date(a.eventStartMyt).getTime() - new Date(b.eventStartMyt).getTime(),
   );
   const atTime = at.getTime();
 
@@ -34,7 +41,9 @@ export function computeNowNext(schedule: unknown, at: Date): NowNext {
     return start <= atTime && atTime < end;
   });
 
-  const threshold = nowEntry ? new Date(nowEntry.eventEndMyt).getTime() : atTime;
+  const threshold = nowEntry
+    ? new Date(nowEntry.eventEndMyt).getTime()
+    : atTime;
   const nextEntry = sorted.find((entry) => {
     const start = new Date(entry.eventStartMyt).getTime();
     return nowEntry ? start >= threshold : start > threshold;

@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import type { ConnectionOptions, Job } from 'bullmq';
 import { Worker } from 'bullmq';
 import type { Command, CommandType } from '../../generated/prisma/client';
@@ -33,15 +38,19 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    this.worker = new Worker<CommandJobData>(getQueueName(), (job) => this.processJob(job), {
-      connection: buildWorkerConnectionOptions() as ConnectionOptions,
-      concurrency: getWorkerConcurrency(),
-      removeOnComplete: { count: JOB_HISTORY_LIMIT },
-      removeOnFail: { count: JOB_HISTORY_LIMIT },
-      lockDuration: WORKER_LOCK_DURATION_MS,
-      stalledInterval: WORKER_STALLED_INTERVAL_MS,
-      maxStalledCount: WORKER_MAX_STALLED_COUNT,
-    });
+    this.worker = new Worker<CommandJobData>(
+      getQueueName(),
+      (job) => this.processJob(job),
+      {
+        connection: buildWorkerConnectionOptions() as ConnectionOptions,
+        concurrency: getWorkerConcurrency(),
+        removeOnComplete: { count: JOB_HISTORY_LIMIT },
+        removeOnFail: { count: JOB_HISTORY_LIMIT },
+        lockDuration: WORKER_LOCK_DURATION_MS,
+        stalledInterval: WORKER_STALLED_INTERVAL_MS,
+        maxStalledCount: WORKER_MAX_STALLED_COUNT,
+      },
+    );
 
     this.worker.on('error', (err) => {
       this.logger.error(`Worker connection error: ${err.message}`);
@@ -57,12 +66,16 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
     const existing = await this.commandsRepository.findById(commandId);
 
     if (!existing) {
-      this.logger.error(`Command ${commandId} not found for job ${job.id}; skipping`);
+      this.logger.error(
+        `Command ${commandId} not found for job ${job.id}; skipping`,
+      );
       return;
     }
 
     if (existing.status === 'DONE' || existing.status === 'FAILED') {
-      this.logger.log(`Duplicate delivery of ${existing.status} command ${commandId} (job ${job.id}); skipping`);
+      this.logger.log(
+        `Duplicate delivery of ${existing.status} command ${commandId} (job ${job.id}); skipping`,
+      );
       return;
     }
 
@@ -143,7 +156,11 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
           );
           await tx.command.update({
             where: { id: command.id },
-            data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
+            data: {
+              status: 'DONE',
+              processedAt: new Date(),
+              processingStartedAt: null,
+            },
           });
           return;
         }
@@ -152,7 +169,11 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
       await handler.handle(command, tx);
       await tx.command.update({
         where: { id: command.id },
-        data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
+        data: {
+          status: 'DONE',
+          processedAt: new Date(),
+          processingStartedAt: null,
+        },
       });
     });
   }

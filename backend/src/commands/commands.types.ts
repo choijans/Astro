@@ -1,4 +1,8 @@
-import type { Command, CommandStatus, CommandType } from '../../generated/prisma/client';
+import type {
+  Command,
+  CommandStatus,
+  CommandType,
+} from '../../generated/prisma/client';
 
 export interface CommandResponse {
   id: string;

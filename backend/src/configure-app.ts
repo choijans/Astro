@@ -14,7 +14,10 @@ export function configureApp(app: INestApplication): void {
 
   const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN);
   app.enableCors({
-    origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    origin(
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) {
       // Requests with no Origin header (curl, server-to-server) aren't subject
       // to CORS and are always allowed through.
       if (!origin || allowedOrigins.includes(origin)) {

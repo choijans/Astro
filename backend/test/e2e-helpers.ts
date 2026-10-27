@@ -22,7 +22,9 @@ export async function pollCommand(
       return res.body;
     }
     if (Date.now() > deadline) {
-      throw new Error(`Command ${commandId} did not settle within ${timeoutMs}ms (last status: ${res.body.status})`);
+      throw new Error(
+        `Command ${commandId} did not settle within ${timeoutMs}ms (last status: ${res.body.status})`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
