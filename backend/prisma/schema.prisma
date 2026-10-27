@@ -58,17 +58,21 @@ enum CommandStatus {
 }
 
 model Command {
-  id          String        @id @db.Uuid
-  seq         BigInt        @unique @default(autoincrement())
-  userId      String
-  channelId   Int
-  type        CommandType
-  status      CommandStatus @default(PENDING)
-  payload     Json
-  attempts    Int           @default(0)
-  error       String?
-  createdAt   DateTime      @default(now())
-  processedAt DateTime?
+  id                  String        @id @db.Uuid
+  seq                 BigInt        @unique @default(autoincrement())
+  userId              String
+  channelId           Int
+  type                CommandType
+  status              CommandStatus @default(PENDING)
+  payload             Json
+  attempts            Int           @default(0)
+  error               String?
+  createdAt           DateTime      @default(now())
+  processedAt         DateTime?
+  /// Set when a command enters PROCESSING, cleared when it leaves (DONE,
+  /// FAILED, or back to PENDING for retry). Lets the recovery sweep tell a
+  /// command whose worker died mid-attempt from one still being worked on.
+  processingStartedAt DateTime?
 
   @@index([userId, channelId, type, seq])
   @@map("commands")

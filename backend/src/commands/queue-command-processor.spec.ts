@@ -1,5 +1,5 @@
-import type { Queue } from 'bullmq';
 import type { Command } from '../../generated/prisma/client';
+import type { JobEnqueuerService } from '../queue/job-enqueuer.service';
 import { QueueCommandProcessor } from './queue-command-processor';
 
 function makeCommand(overrides: Partial<Command> = {}): Command {
@@ -15,39 +15,35 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
     error: null,
     createdAt: new Date(),
     processedAt: null,
+    processingStartedAt: null,
     ...overrides,
-  } as Command;
+  };
 }
 
+// The actual queue.add() behavior (jobId, payload shape, error swallowing) is
+// tested against JobEnqueuerService directly — see job-enqueuer.service.spec.ts.
+// This only checks that process() delegates to it and always returns the
+// command as persisted, regardless of whether the enqueue succeeded.
 describe('QueueCommandProcessor', () => {
-  it('adds a job named after the command type, with jobId equal to the command id and a minimal payload', async () => {
-    const queue = { add: jest.fn().mockResolvedValue({}) } as unknown as Queue;
-    const processor = new QueueCommandProcessor(queue);
+  it('delegates to JobEnqueuerService and returns the command unchanged (still PENDING)', async () => {
+    const jobEnqueuer = {
+      enqueue: jest.fn().mockResolvedValue(true),
+    } as unknown as JobEnqueuerService;
+    const processor = new QueueCommandProcessor(jobEnqueuer);
     const command = makeCommand();
 
     const result = await processor.process(command);
 
-    expect(queue.add).toHaveBeenCalledWith('ADD_FAVORITE', { commandId: 'cmd-1' }, { jobId: 'cmd-1' });
+    expect(jobEnqueuer.enqueue).toHaveBeenCalledWith(command);
     expect(result).toBe(command);
     expect(result.status).toBe('PENDING');
   });
 
-  it('adding the same command id twice results in one job add call per enqueue, both using the same jobId (BullMQ dedups by jobId)', async () => {
-    const queue = { add: jest.fn().mockResolvedValue({}) } as unknown as Queue;
-    const processor = new QueueCommandProcessor(queue);
-    const command = makeCommand();
-
-    await processor.process(command);
-    await processor.process(command);
-
-    expect(queue.add).toHaveBeenCalledTimes(2);
-    const [[, , firstOpts], [, , secondOpts]] = (queue.add as jest.Mock).mock.calls;
-    expect(firstOpts.jobId).toBe(secondOpts.jobId);
-  });
-
-  it('logs and still returns the command (left PENDING) when the queue add fails, e.g. Redis down', async () => {
-    const queue = { add: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) } as unknown as Queue;
-    const processor = new QueueCommandProcessor(queue);
+  it('still returns the command (left PENDING) when the enqueue fails', async () => {
+    const jobEnqueuer = {
+      enqueue: jest.fn().mockResolvedValue(false),
+    } as unknown as JobEnqueuerService;
+    const processor = new QueueCommandProcessor(jobEnqueuer);
     const command = makeCommand({ status: 'PENDING' });
 
     await expect(processor.process(command)).resolves.toBe(command);

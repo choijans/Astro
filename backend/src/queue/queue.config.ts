@@ -5,6 +5,42 @@ export const DEV_REDIS_DB = 0;
 const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_JOB_ATTEMPTS = 6;
 const DEFAULT_JOB_BACKOFF_MS = 1000;
+const DEFAULT_SWEEP_BATCH_SIZE = 200;
+const DEFAULT_SWEEP_INTERVAL_MS = 5000;
+const DEFAULT_PROCESSING_STALE_MS = 45000;
+
+/** A command created more recently than this is skipped by a sweep pass —
+ * it's still in the middle of its own first enqueue attempt (CommandsService
+ * persists it, then adds the job), so a concurrent sweep shouldn't race it. */
+export const SWEEP_GRACE_MS = 2000;
+
+/**
+ * Shortened from BullMQ's own defaults (lockDuration 30000, stalledInterval
+ * 30000 — a worst case of roughly their sum, ~60s, before a stalled job is
+ * even noticed). A healthy worker auto-renews its lock at lockDuration/2, so
+ * 5s is generous headroom for our handlers (a couple of fast, bounded Prisma
+ * calls in one transaction) while cutting the worst-case stall-detection
+ * window to about 10s. maxStalledCount is left at BullMQ's default of 1: a
+ * job stalling a second time is moved straight to BullMQ's own "failed"
+ * bookkeeping without ever calling our processor again, so it can't retry on
+ * its own — PROCESSING_STALE_MS (well above this ~10s window) is what
+ * guarantees that case can't leave a command stuck: the sweep resets it to
+ * PENDING and re-enqueues regardless of what BullMQ privately decided.
+ */
+export const WORKER_LOCK_DURATION_MS = 5000;
+export const WORKER_STALLED_INTERVAL_MS = 5000;
+export const WORKER_MAX_STALLED_COUNT = 1;
+
+/** PROCESSING commands whose worker attempt started longer ago than this are
+ * presumed abandoned (worker crashed, or BullMQ gave up on a stalled job
+ * without ever re-invoking our processor). Must stay comfortably above
+ * WORKER_LOCK_DURATION_MS + WORKER_STALLED_INTERVAL_MS so BullMQ's own
+ * same-process stalled recovery gets first chance before the sweep forces a
+ * reset. */
+export function getProcessingStaleMs(): number {
+  const raw = process.env.PROCESSING_STALE_MS;
+  return raw ? Number(raw) : DEFAULT_PROCESSING_STALE_MS;
+}
 
 export function getQueueName(): string {
   return process.env.QUEUE_NAME ?? DEV_QUEUE_NAME;
@@ -33,6 +69,16 @@ export function getJobBackoffDelayMs(): number {
   return raw ? Number(raw) : DEFAULT_JOB_BACKOFF_MS;
 }
 
+export function getSweepBatchSize(): number {
+  const raw = process.env.SWEEP_BATCH_SIZE;
+  return raw ? Number(raw) : DEFAULT_SWEEP_BATCH_SIZE;
+}
+
+export function getSweepIntervalMs(): number {
+  const raw = process.env.SWEEP_INTERVAL_MS;
+  return raw ? Number(raw) : DEFAULT_SWEEP_INTERVAL_MS;
+}
+
 function getRedisUrl(): string {
   const url = process.env.REDIS_URL;
   if (!url) {
@@ -41,7 +87,9 @@ function getRedisUrl(): string {
   return url;
 }
 
-function parseRedisUrl(url: string): Pick<RedisOptions, 'host' | 'port' | 'username' | 'password'> {
+function parseRedisUrl(
+  url: string,
+): Pick<RedisOptions, 'host' | 'port' | 'username' | 'password'> {
   const parsed = new URL(url);
   return {
     host: parsed.hostname,

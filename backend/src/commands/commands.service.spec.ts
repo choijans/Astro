@@ -25,6 +25,7 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
     error: null,
     createdAt: new Date(),
     processedAt: null,
+    processingStartedAt: null,
     ...overrides,
   } as Command;
 }

@@ -1,7 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Queue } from 'bullmq';
+import { Injectable } from '@nestjs/common';
 import type { Command } from '../../generated/prisma/client';
-import { COMMANDS_QUEUE } from '../queue/queue.module';
+import { JobEnqueuerService } from '../queue/job-enqueuer.service';
 import { ICommandProcessor } from './command-processor.interface';
 
 export interface CommandJobData {
@@ -18,20 +17,10 @@ export interface CommandJobData {
  */
 @Injectable()
 export class QueueCommandProcessor implements ICommandProcessor {
-  private readonly logger = new Logger(QueueCommandProcessor.name);
-
-  constructor(@Inject(COMMANDS_QUEUE) private readonly queue: Queue<CommandJobData>) {}
+  constructor(private readonly jobEnqueuer: JobEnqueuerService) {}
 
   async process(command: Command): Promise<Command> {
-    try {
-      await this.queue.add(command.type, { commandId: command.id }, { jobId: command.id });
-    } catch (err) {
-      // Redis down (or similar): the command is already persisted as PENDING,
-      // so nothing is lost. Task 10's recovery sweep re-enqueues it later.
-      this.logger.error(
-        `Failed to enqueue command ${command.id} (${command.type}): ${(err as Error).message}. Left PENDING.`,
-      );
-    }
+    await this.jobEnqueuer.enqueue(command);
     return command;
   }
 }
