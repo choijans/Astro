@@ -6,7 +6,14 @@ import { CommandHandlerRegistry } from '../commands/command-handler-registry';
 import type { CommandJobData } from '../commands/queue-command-processor';
 import { CommandsRepository } from '../commands/commands.repository';
 import { PrismaService } from '../prisma/prisma.service';
-import { buildWorkerConnectionOptions, getQueueName, getWorkerConcurrency } from '../queue/queue.config';
+import {
+  buildWorkerConnectionOptions,
+  getQueueName,
+  getWorkerConcurrency,
+  WORKER_LOCK_DURATION_MS,
+  WORKER_MAX_STALLED_COUNT,
+  WORKER_STALLED_INTERVAL_MS,
+} from '../queue/queue.config';
 
 /** ADD_FAVORITE/REMOVE_FAVORITE share one ordering key: (userId, channelId).
  * REFRESH_CHANNEL isn't built yet (still rejected with 400 at the API), so it
@@ -31,6 +38,9 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
       concurrency: getWorkerConcurrency(),
       removeOnComplete: { count: JOB_HISTORY_LIMIT },
       removeOnFail: { count: JOB_HISTORY_LIMIT },
+      lockDuration: WORKER_LOCK_DURATION_MS,
+      stalledInterval: WORKER_STALLED_INTERVAL_MS,
+      maxStalledCount: WORKER_MAX_STALLED_COUNT,
     });
 
     this.worker.on('error', (err) => {
@@ -133,7 +143,7 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
           );
           await tx.command.update({
             where: { id: command.id },
-            data: { status: 'DONE', processedAt: new Date() },
+            data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
           });
           return;
         }
@@ -142,7 +152,7 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
       await handler.handle(command, tx);
       await tx.command.update({
         where: { id: command.id },
-        data: { status: 'DONE', processedAt: new Date() },
+        data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
       });
     });
   }

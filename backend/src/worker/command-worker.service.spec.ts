@@ -20,6 +20,7 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
     error: null,
     createdAt: new Date(),
     processedAt: null,
+    processingStartedAt: null,
     ...overrides,
   } as Command;
 }
@@ -92,7 +93,7 @@ describe('CommandWorkerService', () => {
     expect(handler.handle).toHaveBeenCalledWith(processing, tx);
     expect(tx.command.update).toHaveBeenCalledWith({
       where: { id: 'cmd-1' },
-      data: { status: 'DONE', processedAt: expect.any(Date) },
+      data: { status: 'DONE', processedAt: expect.any(Date), processingStartedAt: null },
     });
   });
 
@@ -166,7 +167,7 @@ describe('CommandWorkerService', () => {
     expect(handler.handle).not.toHaveBeenCalled();
     expect(tx.command.update).toHaveBeenCalledWith({
       where: { id: 'cmd-1' },
-      data: { status: 'DONE', processedAt: expect.any(Date) },
+      data: { status: 'DONE', processedAt: expect.any(Date), processingStartedAt: null },
     });
   });
 

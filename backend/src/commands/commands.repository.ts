@@ -34,7 +34,7 @@ export class CommandsRepository {
   async markDone(id: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'DONE', processedAt: new Date() },
+      data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
     });
   }
 
@@ -43,7 +43,7 @@ export class CommandsRepository {
   async markProcessing(id: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'PROCESSING', attempts: { increment: 1 } },
+      data: { status: 'PROCESSING', attempts: { increment: 1 }, processingStartedAt: new Date() },
     });
   }
 
@@ -52,14 +52,54 @@ export class CommandsRepository {
   async markPendingForRetry(id: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'PENDING' },
+      data: { status: 'PENDING', processingStartedAt: null },
     });
   }
 
   async markFailed(id: string, error: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'FAILED', error, processedAt: new Date() },
+      data: { status: 'FAILED', error, processedAt: new Date(), processingStartedAt: null },
+    });
+  }
+
+  /** Oldest seq first, in batches, excluding anything created within the
+   * last `graceMs` — used by the recovery sweep, never touches DONE, FAILED
+   * or PROCESSING rows. */
+  async findPendingForSweep(
+    batchSize: number,
+    graceMs: number,
+  ): Promise<Command[]> {
+    const cutoff = new Date(Date.now() - graceMs);
+    return this.prisma.command.findMany({
+      where: { status: 'PENDING', createdAt: { lt: cutoff } },
+      orderBy: { seq: 'asc' },
+      take: batchSize,
+    });
+  }
+
+  /** PROCESSING commands whose worker attempt started more than `staleMs` ago
+   * — the worker that picked them up is presumed dead (crashed, or its
+   * BullMQ job stalled past the point BullMQ itself would recover it). Oldest
+   * first, in batches, same shape as findPendingForSweep. */
+  async findStaleProcessingForSweep(
+    batchSize: number,
+    staleMs: number,
+  ): Promise<Command[]> {
+    const cutoff = new Date(Date.now() - staleMs);
+    return this.prisma.command.findMany({
+      where: { status: 'PROCESSING', processingStartedAt: { lt: cutoff } },
+      orderBy: { seq: 'asc' },
+      take: batchSize,
+    });
+  }
+
+  /** Resets a stale PROCESSING command back to PENDING so the sweep can
+   * re-enqueue it through the normal job-add path. */
+  async resetStaleProcessingToPending(id: string): Promise<Command> {
+    return this.prisma.command.update({
+      where: { id },
+      data: { status: 'PENDING', processingStartedAt: null },
     });
   }
 
