@@ -30,4 +30,4 @@ async function bootstrap() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-bootstrap();
+void bootstrap();

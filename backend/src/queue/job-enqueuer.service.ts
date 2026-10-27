@@ -55,7 +55,9 @@ export class JobEnqueuerService {
    * safe to treat as "leave it alone" as a genuinely active job: the command
    * stays PROCESSING and the next sweep pass tries again, rather than risking
    * a reset+re-add racing a worker that may still own the job after all. */
-  async prepareStaleJobForReenqueue(commandId: string): Promise<'ready' | 'still-active'> {
+  async prepareStaleJobForReenqueue(
+    commandId: string,
+  ): Promise<'ready' | 'still-active'> {
     try {
       const job = await this.queue.getJob(commandId);
       if (!job) {

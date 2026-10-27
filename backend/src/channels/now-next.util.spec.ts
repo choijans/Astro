@@ -23,8 +23,16 @@ describe('computeNowNext', () => {
 
     const { now, next } = computeNowNext(SCHEDULE, at);
 
-    expect(now).toEqual({ title: 'Show A', start: SCHEDULE[0].eventStartMyt, end: SCHEDULE[0].eventEndMyt });
-    expect(next).toEqual({ title: 'Show B', start: SCHEDULE[1].eventStartMyt, end: SCHEDULE[1].eventEndMyt });
+    expect(now).toEqual({
+      title: 'Show A',
+      start: SCHEDULE[0].eventStartMyt,
+      end: SCHEDULE[0].eventEndMyt,
+    });
+    expect(next).toEqual({
+      title: 'Show B',
+      start: SCHEDULE[1].eventStartMyt,
+      end: SCHEDULE[1].eventEndMyt,
+    });
   });
 
   it('finds no now but a next when the clock sits in a gap between shows', () => {
@@ -37,7 +45,11 @@ describe('computeNowNext', () => {
     const { now, next } = computeNowNext(gappy, at);
 
     expect(now).toBeNull();
-    expect(next).toEqual({ title: 'Show B', start: gappy[1].eventStartMyt, end: gappy[1].eventEndMyt });
+    expect(next).toEqual({
+      title: 'Show B',
+      start: gappy[1].eventStartMyt,
+      end: gappy[1].eventEndMyt,
+    });
   });
 
   it('returns a null next when now is the last item in the schedule', () => {
@@ -45,7 +57,11 @@ describe('computeNowNext', () => {
 
     const { now, next } = computeNowNext(SCHEDULE, at);
 
-    expect(now).toEqual({ title: 'Show C', start: SCHEDULE[2].eventStartMyt, end: SCHEDULE[2].eventEndMyt });
+    expect(now).toEqual({
+      title: 'Show C',
+      start: SCHEDULE[2].eventStartMyt,
+      end: SCHEDULE[2].eventEndMyt,
+    });
     expect(next).toBeNull();
   });
 

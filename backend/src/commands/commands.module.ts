@@ -11,7 +11,11 @@ import { QueueCommandProcessor } from './queue-command-processor';
 @Module({
   imports: [QueueModule],
   controllers: [CommandsController],
-  providers: [CommandsService, CommandsRepository, { provide: COMMAND_PROCESSOR, useClass: QueueCommandProcessor }],
+  providers: [
+    CommandsService,
+    CommandsRepository,
+    { provide: COMMAND_PROCESSOR, useClass: QueueCommandProcessor },
+  ],
   exports: [CommandsService],
 })
 export class CommandsModule {}

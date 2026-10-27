@@ -1,4 +1,8 @@
-import type { Command, CommandType, Prisma } from '../../generated/prisma/client';
+import type {
+  Command,
+  CommandType,
+  Prisma,
+} from '../../generated/prisma/client';
 
 /** Multi-provider token: every handler registers itself under this token. */
 export const COMMAND_HANDLER = Symbol('COMMAND_HANDLER');

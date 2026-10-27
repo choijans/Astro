@@ -7,7 +7,7 @@ import { SyncService } from './sync.service';
 function createPrismaMock(): PrismaService {
   return {
     channel: { upsert: jest.fn().mockResolvedValue({}) },
-    $transaction: jest.fn().mockImplementation(async (ops: unknown[]) => ops),
+    $transaction: jest.fn().mockImplementation((ops: unknown[]) => ops),
   } as unknown as PrismaService;
 }
 
@@ -17,19 +17,25 @@ describe('SyncService.upsertAll', () => {
     const service = new SyncService(new FixtureAstroClient(), prisma);
 
     const first = await service.upsertAll();
-    const firstCalls = (prisma.channel.upsert as jest.Mock).mock.calls.map((call) => call[0]);
+    const firstCalls = (prisma.channel.upsert as jest.Mock).mock.calls.map(
+      (call) => call[0],
+    );
 
     (prisma.channel.upsert as jest.Mock).mockClear();
     (prisma.$transaction as jest.Mock).mockClear();
 
     const second = await service.upsertAll();
-    const secondCalls = (prisma.channel.upsert as jest.Mock).mock.calls.map((call) => call[0]);
+    const secondCalls = (prisma.channel.upsert as jest.Mock).mock.calls.map(
+      (call) => call[0],
+    );
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
     expect(second.upserted).toBe(first.upserted);
     expect(secondCalls.length).toBe(firstCalls.length);
-    expect(secondCalls.map((c) => c.where.id)).toEqual(firstCalls.map((c) => c.where.id));
+    expect(secondCalls.map((c) => c.where.id)).toEqual(
+      firstCalls.map((c) => c.where.id),
+    );
   });
 
   it('never includes createdAt in the update payload, so it can never overwrite it', async () => {
@@ -63,7 +69,9 @@ describe('SyncService.upsertAll', () => {
     const badCodeClient: IAstroClient = {
       fetchChannels: jest
         .fn()
-        .mockRejectedValue(new AstroApiError('Astro responded with responseCode 500: fail')),
+        .mockRejectedValue(
+          new AstroApiError('Astro responded with responseCode 500: fail'),
+        ),
     };
     const service = new SyncService(badCodeClient, prisma);
 

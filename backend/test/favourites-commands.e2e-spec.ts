@@ -35,10 +35,14 @@ describe('Favourites & Commands (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    const channel = await prisma.channel.findFirstOrThrow({ orderBy: { id: 'asc' } });
+    const channel = await prisma.channel.findFirstOrThrow({
+      orderBy: { id: 'asc' },
+    });
     channelId = channel.id;
 
-    workerApp = await Test.createTestingModule({ imports: [WorkerModule] }).compile();
+    workerApp = await Test.createTestingModule({
+      imports: [WorkerModule],
+    }).compile();
     await workerApp.init();
   });
 
@@ -66,7 +70,10 @@ describe('Favourites & Commands (e2e)', () => {
       const settled = await pollCommand(app, userA, addRes.body.id);
       expect(settled.status).toBe('DONE');
 
-      const listRes = await asUser(userA, request(app.getHttpServer()).get('/favourites')).expect(200);
+      const listRes = await asUser(
+        userA,
+        request(app.getHttpServer()).get('/favourites'),
+      ).expect(200);
       expect(listRes.body).toHaveLength(1);
       expect(listRes.body[0].id).toBe(channelId);
       expect(listRes.body[0]).not.toHaveProperty('schedule');
@@ -78,17 +85,27 @@ describe('Favourites & Commands (e2e)', () => {
 
     await asUser(
       userA,
-      request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', commandId),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId })
+        .set('X-Command-Id', commandId),
     ).expect(202);
     await asUser(
       userA,
-      request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', commandId),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId })
+        .set('X-Command-Id', commandId),
     ).expect(202);
 
     await pollCommand(app, userA, commandId);
 
-    const favouriteCount = await prisma.favourite.count({ where: { userId: userA, channelId } });
-    const commandCount = await prisma.command.count({ where: { id: commandId } });
+    const favouriteCount = await prisma.favourite.count({
+      where: { userId: userA, channelId },
+    });
+    const commandCount = await prisma.command.count({
+      where: { id: commandId },
+    });
     expect(favouriteCount).toBe(1);
     expect(commandCount).toBe(1);
 
@@ -103,7 +120,10 @@ describe('Favourites & Commands (e2e)', () => {
     const sendOnce = () =>
       asUser(
         userA,
-        request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', commandId),
+        request(app.getHttpServer())
+          .post('/favourites')
+          .send({ channelId })
+          .set('X-Command-Id', commandId),
       );
 
     const [resA, resB] = await Promise.all([sendOnce(), sendOnce()]);
@@ -116,8 +136,12 @@ describe('Favourites & Commands (e2e)', () => {
 
     await pollCommand(app, userA, commandId);
 
-    const favouriteCount = await prisma.favourite.count({ where: { userId: userA, channelId } });
-    const commandCount = await prisma.command.count({ where: { id: commandId } });
+    const favouriteCount = await prisma.favourite.count({
+      where: { userId: userA, channelId },
+    });
+    const commandCount = await prisma.command.count({
+      where: { id: commandId },
+    });
     expect(favouriteCount).toBe(1);
     expect(commandCount).toBe(1);
   });
@@ -125,12 +149,18 @@ describe('Favourites & Commands (e2e)', () => {
   it('invalid X-Command-Id header gives 400', async () => {
     await asUser(
       userA,
-      request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', 'not-a-uuid'),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId })
+        .set('X-Command-Id', 'not-a-uuid'),
     ).expect(400);
   });
 
   it('remove when absent succeeds', async () => {
-    const res = await asUser(userA, request(app.getHttpServer()).delete(`/favourites/${channelId}`)).expect(202);
+    const res = await asUser(
+      userA,
+      request(app.getHttpServer()).delete(`/favourites/${channelId}`),
+    ).expect(202);
     expect(res.body.status).toBe('PENDING');
     const settled = await pollCommand(app, userA, res.body.id);
     expect(settled.status).toBe('DONE');
@@ -139,18 +169,25 @@ describe('Favourites & Commands (e2e)', () => {
   it('unknown channel gives 404', async () => {
     const res = await asUser(
       userA,
-      request(app.getHttpServer()).post('/favourites').send({ channelId: 999999 }),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId: 999999 }),
     ).expect(404);
     expect(res.body).toMatchObject({ statusCode: 404, error: 'Not Found' });
   });
 
   it('missing X-User-Id gives 400', async () => {
-    const res = await request(app.getHttpServer()).get('/favourites').expect(400);
+    const res = await request(app.getHttpServer())
+      .get('/favourites')
+      .expect(400);
     expect(res.body.statusCode).toBe(400);
   });
 
   it('invalid X-User-Id gives 400', async () => {
-    await request(app.getHttpServer()).get('/favourites').set('X-User-Id', 'not-a-uuid').expect(400);
+    await request(app.getHttpServer())
+      .get('/favourites')
+      .set('X-User-Id', 'not-a-uuid')
+      .expect(400);
   });
 
   it('a command id reused by another user gives 409', async () => {
@@ -158,12 +195,18 @@ describe('Favourites & Commands (e2e)', () => {
 
     await asUser(
       userA,
-      request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', commandId),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId })
+        .set('X-Command-Id', commandId),
     ).expect(202);
 
     const res = await asUser(
       userB,
-      request(app.getHttpServer()).post('/favourites').send({ channelId }).set('X-Command-Id', commandId),
+      request(app.getHttpServer())
+        .post('/favourites')
+        .send({ channelId })
+        .set('X-Command-Id', commandId),
     ).expect(409);
     expect(res.body.statusCode).toBe(409);
   });
@@ -175,10 +218,16 @@ describe('Favourites & Commands (e2e)', () => {
     ).expect(202);
     const commandId = addRes.body.id;
 
-    const listB = await asUser(userB, request(app.getHttpServer()).get('/favourites')).expect(200);
+    const listB = await asUser(
+      userB,
+      request(app.getHttpServer()).get('/favourites'),
+    ).expect(200);
     expect(listB.body).toEqual([]);
 
-    await asUser(userB, request(app.getHttpServer()).get(`/commands/${commandId}`)).expect(404);
+    await asUser(
+      userB,
+      request(app.getHttpServer()).get(`/commands/${commandId}`),
+    ).expect(404);
   });
 
   it('GET /commands/:id succeeds for the owner and gives 404 for a stranger', async () => {
@@ -188,10 +237,16 @@ describe('Favourites & Commands (e2e)', () => {
     ).expect(202);
     const commandId = addRes.body.id;
 
-    const ownerRes = await asUser(userA, request(app.getHttpServer()).get(`/commands/${commandId}`)).expect(200);
+    const ownerRes = await asUser(
+      userA,
+      request(app.getHttpServer()).get(`/commands/${commandId}`),
+    ).expect(200);
     expect(ownerRes.body.id).toBe(commandId);
 
-    await asUser(userB, request(app.getHttpServer()).get(`/commands/${commandId}`)).expect(404);
+    await asUser(
+      userB,
+      request(app.getHttpServer()).get(`/commands/${commandId}`),
+    ).expect(404);
   });
 
   it('seq is serialized as a string', async () => {
@@ -218,7 +273,9 @@ describe('Favourites & Commands (e2e)', () => {
     const commandId = randomUUID();
     const res = await asUser(
       userA,
-      request(app.getHttpServer()).post('/commands').send({ id: commandId, type: 'ADD_FAVORITE', channelId }),
+      request(app.getHttpServer())
+        .post('/commands')
+        .send({ id: commandId, type: 'ADD_FAVORITE', channelId }),
     ).expect(202);
 
     await pollCommand(app, userA, commandId);
@@ -240,7 +297,10 @@ describe('Favourites & Commands (e2e)', () => {
       request(app.getHttpServer()).delete(`/favourites/${channelId}`),
     ).expect(202);
 
-    await Promise.all([pollCommand(app, userA, addRes.body.id), pollCommand(app, userA, removeRes.body.id)]);
+    await Promise.all([
+      pollCommand(app, userA, addRes.body.id),
+      pollCommand(app, userA, removeRes.body.id),
+    ]);
 
     const favourite = await prisma.favourite.findUnique({
       where: { userId_channelId: { userId: userA, channelId } },
@@ -248,13 +308,25 @@ describe('Favourites & Commands (e2e)', () => {
     expect(favourite).toBeNull();
   });
 
-  it('~50 interleaved add/remove commands from 2 users on a few channels converge to each (user, channel)\'s last command', async () => {
-    const channels = await prisma.channel.findMany({ take: 3, orderBy: { id: 'asc' } });
+  it("~50 interleaved add/remove commands from 2 users on a few channels converge to each (user, channel)'s last command", async () => {
+    const channels = await prisma.channel.findMany({
+      take: 3,
+      orderBy: { id: 'asc' },
+    });
     const channelIds = channels.map((c) => c.id);
     const users = [userA, userB];
-    const types: Array<'ADD_FAVORITE' | 'REMOVE_FAVORITE'> = ['ADD_FAVORITE', 'REMOVE_FAVORITE'];
+    const types: Array<'ADD_FAVORITE' | 'REMOVE_FAVORITE'> = [
+      'ADD_FAVORITE',
+      'REMOVE_FAVORITE',
+    ];
 
-    const submissions: Array<{ userId: string; channelId: number; type: string; id: string; seqPromise: Promise<string> }> = [];
+    const submissions: Array<{
+      userId: string;
+      channelId: number;
+      type: string;
+      id: string;
+      seqPromise: Promise<string>;
+    }> = [];
 
     for (let i = 0; i < 50; i++) {
       const userId = users[i % users.length];
@@ -262,7 +334,10 @@ describe('Favourites & Commands (e2e)', () => {
       const type = types[i % types.length];
       const id = randomUUID();
 
-      const req = asUser(userId, request(app.getHttpServer()).post('/commands')).send({
+      const req = asUser(
+        userId,
+        request(app.getHttpServer()).post('/commands'),
+      ).send({
         id,
         type,
         channelId: targetChannelId,
@@ -293,7 +368,9 @@ describe('Favourites & Commands (e2e)', () => {
 
     for (const [, last] of byKey) {
       const favourite = await prisma.favourite.findUnique({
-        where: { userId_channelId: { userId: last.userId, channelId: last.channelId } },
+        where: {
+          userId_channelId: { userId: last.userId, channelId: last.channelId },
+        },
       });
       if (last.type === 'ADD_FAVORITE') {
         expect(favourite).not.toBeNull();
@@ -321,12 +398,17 @@ describe('Commands (e2e) — handler failure', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    const channel = await prisma.channel.findFirstOrThrow({ orderBy: { id: 'asc' } });
+    const channel = await prisma.channel.findFirstOrThrow({
+      orderBy: { id: 'asc' },
+    });
     channelId = channel.id;
 
     workerApp = await Test.createTestingModule({ imports: [WorkerModule] })
       .overrideProvider(AddFavouriteHandler)
-      .useValue({ type: 'ADD_FAVORITE', handle: jest.fn().mockRejectedValue(new Error('boom')) })
+      .useValue({
+        type: 'ADD_FAVORITE',
+        handle: jest.fn().mockRejectedValue(new Error('boom')),
+      })
       .compile();
     await workerApp.init();
   });
@@ -353,7 +435,9 @@ describe('Commands (e2e) — handler failure', () => {
 
     expect(addRes.body.status).toBe('PENDING');
 
-    const settled = await pollCommand(app, userA, commandId, { timeoutMs: 20000 });
+    const settled = await pollCommand(app, userA, commandId, {
+      timeoutMs: 20000,
+    });
     expect(settled.status).toBe('FAILED');
     expect(settled.error).toBe('boom');
 
@@ -377,7 +461,9 @@ describe('Commands (e2e) — queue failure', () => {
     })
       .overrideProvider(COMMANDS_QUEUE)
       .useValue({
-        add: jest.fn().mockRejectedValue(new Error('ECONNREFUSED: Redis is down')),
+        add: jest
+          .fn()
+          .mockRejectedValue(new Error('ECONNREFUSED: Redis is down')),
         close: jest.fn().mockResolvedValue(undefined),
       })
       .compile();
@@ -387,7 +473,9 @@ describe('Commands (e2e) — queue failure', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    const channel = await prisma.channel.findFirstOrThrow({ orderBy: { id: 'asc' } });
+    const channel = await prisma.channel.findFirstOrThrow({
+      orderBy: { id: 'asc' },
+    });
     channelId = channel.id;
   });
 
@@ -408,7 +496,9 @@ describe('Commands (e2e) — queue failure', () => {
 
     expect(res.body.status).toBe('PENDING');
 
-    const stored = await prisma.command.findUniqueOrThrow({ where: { id: res.body.id } });
+    const stored = await prisma.command.findUniqueOrThrow({
+      where: { id: res.body.id },
+    });
     expect(stored.status).toBe('PENDING');
   });
 });

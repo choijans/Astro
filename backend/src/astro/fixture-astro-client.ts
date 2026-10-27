@@ -5,7 +5,10 @@ import { IAstroClient } from './astro-client.interface';
 import { parseAstroEnvelope } from './astro-envelope';
 import { AstroChannelRecord, AstroSearchLinearResponse } from './astro.types';
 
-export const FIXTURE_PATH = join(process.cwd(), 'test/fixtures/astro-response.json');
+export const FIXTURE_PATH = join(
+  process.cwd(),
+  'test/fixtures/astro-response.json',
+);
 
 /**
  * Reads the single committed Astro response fixture instead of calling the live
@@ -16,9 +19,9 @@ export const FIXTURE_PATH = join(process.cwd(), 'test/fixtures/astro-response.js
 export class FixtureAstroClient implements IAstroClient {
   constructor(private readonly fixturePath: string = FIXTURE_PATH) {}
 
-  async fetchChannels(): Promise<AstroChannelRecord[]> {
+  fetchChannels(): Promise<AstroChannelRecord[]> {
     const raw = readFileSync(this.fixturePath, 'utf-8');
     const body = JSON.parse(raw) as AstroSearchLinearResponse;
-    return parseAstroEnvelope(body);
+    return Promise.resolve(parseAstroEnvelope(body));
   }
 }

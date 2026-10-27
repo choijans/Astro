@@ -34,7 +34,11 @@ export class CommandsRepository {
   async markDone(id: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'DONE', processedAt: new Date(), processingStartedAt: null },
+      data: {
+        status: 'DONE',
+        processedAt: new Date(),
+        processingStartedAt: null,
+      },
     });
   }
 
@@ -43,7 +47,11 @@ export class CommandsRepository {
   async markProcessing(id: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'PROCESSING', attempts: { increment: 1 }, processingStartedAt: new Date() },
+      data: {
+        status: 'PROCESSING',
+        attempts: { increment: 1 },
+        processingStartedAt: new Date(),
+      },
     });
   }
 
@@ -59,7 +67,12 @@ export class CommandsRepository {
   async markFailed(id: string, error: string): Promise<Command> {
     return this.prisma.command.update({
       where: { id },
-      data: { status: 'FAILED', error, processedAt: new Date(), processingStartedAt: null },
+      data: {
+        status: 'FAILED',
+        error,
+        processedAt: new Date(),
+        processingStartedAt: null,
+      },
     });
   }
 

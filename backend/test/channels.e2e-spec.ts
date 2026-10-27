@@ -11,7 +11,9 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const fixturePath = join(__dirname, 'fixtures/astro-response.json');
-const fixture = JSON.parse(readFileSync(fixturePath, 'utf-8')) as AstroSearchLinearResponse;
+const fixture = JSON.parse(
+  readFileSync(fixturePath, 'utf-8'),
+) as AstroSearchLinearResponse;
 const fixtureChannels = fixture.response.channels.data;
 const TOTAL_CHANNELS = fixtureChannels.length;
 
@@ -65,9 +67,16 @@ describe('Channels (e2e)', () => {
 
   describe('GET /channels', () => {
     it('returns a paginated list that excludes the schedule', async () => {
-      const res = await request(app.getHttpServer()).get('/channels').query({ limit: 5 }).expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/channels')
+        .query({ limit: 5 })
+        .expect(200);
 
-      expect(res.body).toMatchObject({ page: 1, limit: 5, total: TOTAL_CHANNELS });
+      expect(res.body).toMatchObject({
+        page: 1,
+        limit: 5,
+        total: TOTAL_CHANNELS,
+      });
       expect(res.body.data).toHaveLength(5);
       expect(res.body.data[0]).not.toHaveProperty('schedule');
     });
@@ -76,7 +85,10 @@ describe('Channels (e2e)', () => {
       const target = fixtureChannels.find((c) => c.stbNumber === '100');
       expect(target).toBeDefined();
 
-      const res = await request(app.getHttpServer()).get('/channels').query({ q: '100' }).expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/channels')
+        .query({ q: '100' })
+        .expect(200);
 
       expect(res.body.total).toBe(1);
       expect(res.body.data[0].id).toBe(target!.id);
@@ -105,9 +117,14 @@ describe('Channels (e2e)', () => {
       const sample = fixtureChannels[0];
       const upper = sample.title.toUpperCase();
 
-      const res = await request(app.getHttpServer()).get('/channels').query({ q: upper }).expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/channels')
+        .query({ q: upper })
+        .expect(200);
 
-      expect(res.body.data.some((c: { id: number }) => c.id === sample.id)).toBe(true);
+      expect(
+        res.body.data.some((c: { id: number }) => c.id === sample.id),
+      ).toBe(true);
     });
 
     it.each(['stbNumber', 'title', 'ranking'] as const)(
@@ -122,11 +139,19 @@ describe('Channels (e2e)', () => {
           .query({ sort, order: 'desc', limit: 100 })
           .expect(200);
 
-        const ascValues = asc.body.data.map((c: Record<string, string | number>) => c[sort]);
-        const descValues = desc.body.data.map((c: Record<string, string | number>) => c[sort]);
+        const ascValues = asc.body.data.map(
+          (c: Record<string, string | number>) => c[sort],
+        );
+        const descValues = desc.body.data.map(
+          (c: Record<string, string | number>) => c[sort],
+        );
 
-        expect(await isSortedAccordingToDb(prisma, ascValues, 'asc')).toBe(true);
-        expect(await isSortedAccordingToDb(prisma, descValues, 'desc')).toBe(true);
+        expect(await isSortedAccordingToDb(prisma, ascValues, 'asc')).toBe(
+          true,
+        );
+        expect(await isSortedAccordingToDb(prisma, descValues, 'desc')).toBe(
+          true,
+        );
       },
     );
 
@@ -167,7 +192,11 @@ describe('Channels (e2e)', () => {
         .expect(200);
 
       expect(res.body.total).toBeGreaterThan(0);
-      for (const item of res.body.data as Array<{ category: string; languages: string[]; genres: string[] }>) {
+      for (const item of res.body.data as Array<{
+        category: string;
+        languages: string[];
+        genres: string[];
+      }>) {
         expect(item.category).toBe(sample.category);
         expect(item.languages).toContain(sample.languageKey[0]);
         expect(item.genres).toContain(sample.genreKey[0]);
@@ -180,7 +209,10 @@ describe('Channels (e2e)', () => {
       ['limit 101', { limit: 101 }],
       ['page -1', { page: -1 }],
     ])('rejects %s with 400', async (_label, query) => {
-      const res = await request(app.getHttpServer()).get('/channels').query(query).expect(400);
+      const res = await request(app.getHttpServer())
+        .get('/channels')
+        .query(query)
+        .expect(400);
       expect(res.body).toMatchObject({ statusCode: 400, error: 'Bad Request' });
       expect(res.body).toHaveProperty('message');
     });
@@ -188,9 +220,13 @@ describe('Channels (e2e)', () => {
 
   describe('GET /channels/filters', () => {
     it('returns distinct categories, languages and genres', async () => {
-      const res = await request(app.getHttpServer()).get('/channels/filters').expect(200);
+      const res = await request(app.getHttpServer())
+        .get('/channels/filters')
+        .expect(200);
 
-      const expectedCategories = [...new Set(fixtureChannels.map((c) => c.category))].sort();
+      const expectedCategories = [
+        ...new Set(fixtureChannels.map((c) => c.category)),
+      ].sort();
       expect(res.body.categories).toEqual(expectedCategories);
     });
   });
@@ -198,19 +234,25 @@ describe('Channels (e2e)', () => {
   describe('GET /channels/:id', () => {
     it('returns the full channel, including schedule and scheduleUpdatedAt', async () => {
       const sample = fixtureChannels[0];
-      const res = await request(app.getHttpServer()).get(`/channels/${sample.id}`).expect(200);
+      const res = await request(app.getHttpServer())
+        .get(`/channels/${sample.id}`)
+        .expect(200);
 
       expect(res.body).toHaveProperty('schedule');
       expect(res.body).toHaveProperty('scheduleUpdatedAt');
     });
 
     it('returns 404 for an unknown id', async () => {
-      const res = await request(app.getHttpServer()).get('/channels/999999').expect(404);
+      const res = await request(app.getHttpServer())
+        .get('/channels/999999')
+        .expect(404);
       expect(res.body).toMatchObject({ statusCode: 404, error: 'Not Found' });
     });
 
     it('returns 400 for a non-integer id', async () => {
-      const res = await request(app.getHttpServer()).get('/channels/abc').expect(400);
+      const res = await request(app.getHttpServer())
+        .get('/channels/abc')
+        .expect(400);
       expect(res.body).toMatchObject({ statusCode: 400, error: 'Bad Request' });
     });
   });

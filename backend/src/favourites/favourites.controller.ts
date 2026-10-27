@@ -37,7 +37,11 @@ export class FavouritesController {
     @Headers('x-command-id') commandIdHeader?: string,
   ) {
     const commandId = resolveCommandId(commandIdHeader);
-    const command = await this.favouritesService.add(userId, dto.channelId, commandId);
+    const command = await this.favouritesService.add(
+      userId,
+      dto.channelId,
+      commandId,
+    );
     return toCommandResponse(command);
   }
 
@@ -49,7 +53,11 @@ export class FavouritesController {
     @Headers('x-command-id') commandIdHeader?: string,
   ) {
     const commandId = resolveCommandId(commandIdHeader);
-    const command = await this.favouritesService.remove(userId, channelId, commandId);
+    const command = await this.favouritesService.remove(
+      userId,
+      channelId,
+      commandId,
+    );
     return toCommandResponse(command);
   }
 }

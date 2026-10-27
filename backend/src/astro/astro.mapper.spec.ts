@@ -4,13 +4,17 @@ import { mapAstroChannel } from './astro.mapper';
 import { AstroChannelRecord, AstroSearchLinearResponse } from './astro.types';
 
 const fixturePath = join(__dirname, '../../test/fixtures/astro-response.json');
-const fixture = JSON.parse(readFileSync(fixturePath, 'utf-8')) as AstroSearchLinearResponse;
+const fixture = JSON.parse(
+  readFileSync(fixturePath, 'utf-8'),
+) as AstroSearchLinearResponse;
 const records: AstroChannelRecord[] = fixture.response.channels.data;
 const syncedAt = new Date('2026-01-01T00:00:00Z');
 
 describe('mapAstroChannel (against the real fixture)', () => {
   it('maps every record in the fixture without throwing', () => {
-    expect(() => records.map((record) => mapAstroChannel(record, syncedAt))).not.toThrow();
+    expect(() =>
+      records.map((record) => mapAstroChannel(record, syncedAt)),
+    ).not.toThrow();
   });
 
   it('casts stbNumber from a string to an integer', () => {
@@ -32,11 +36,17 @@ describe('mapAstroChannel (against the real fixture)', () => {
 
   it('drops isAstroFirstExclusive, isAstroGoExclusive and isRadioExclusive', () => {
     const flaggedRecord = records.find(
-      (record) => record.isAstroFirstExclusive || record.isAstroGoExclusive || record.isRadioExclusive,
+      (record) =>
+        record.isAstroFirstExclusive ||
+        record.isAstroGoExclusive ||
+        record.isRadioExclusive,
     );
     expect(flaggedRecord).toBeDefined();
 
-    const mapped = mapAstroChannel(flaggedRecord!, syncedAt) as Record<string, unknown>;
+    const mapped = mapAstroChannel(flaggedRecord!, syncedAt) as Record<
+      string,
+      unknown
+    >;
     expect(mapped.isAstroFirstExclusive).toBeUndefined();
     expect(mapped.isAstroGoExclusive).toBeUndefined();
     expect(mapped.isRadioExclusive).toBeUndefined();

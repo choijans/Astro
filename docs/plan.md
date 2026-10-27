@@ -254,27 +254,105 @@ Two parts, kept as two commits on one branch so Part A can be reviewed/committed
   unrelated script that's merely present.
 - **Time:** ~5 hrs.
 
-## 10. Recovery sweep, REFRESH_CHANNEL and outage test
+## 10a. Recovery sweep and outage test
 
-- **Goal:** recovery sweep runs on API/worker start, on Redis reconnect, and on a 5-10 second
-  periodic backstop, re-enqueuing PENDING commands. The `REFRESH_CHANNEL` handler keeps an
-  **in-memory**, ~60-second cached copy of the Astro channel list — independent of the Redis
-  response cache built in Task 13, so refresh collapsing still works even if that task is cut —
-  so concurrent refresh requests for the same channel make one Astro call; once it resolves,
-  every pending `REFRESH_CHANNEL` command for that channel is marked DONE, even across different
-  users. Wire the frontend Refresh button (built in Task 8) to actually dispatch
-  `REFRESH_CHANNEL`.
+- **Goal:** `RecoverySweepService` finds commands still PENDING (oldest seq first, in batches —
+  env `SWEEP_BATCH_SIZE`, default 200), skipping anything created within the last 2 seconds (so a
+  request still mid-enqueue isn't raced), and re-adds each through the same job-add path used for
+  a fresh command (job id = command UUID, so re-adding an already-queued/active job is a no-op).
+  Never touches DONE, FAILED or PROCESSING commands; never throws (a queue/Redis error is logged,
+  the next pass tries again); passes never overlap. Triggers: the worker runs a pass on start, on
+  every Redis reconnect (its Queue connection's `ready` event, skipping the very first one), and
+  on an interval (env `SWEEP_INTERVAL_MS`, default 5000); the API runs one pass on start only
+  (both get this via `RecoverySweepService`'s own `OnModuleInit`, since `QueueModule` is in both
+  processes' dependency graph — the worker's interval/reconnect wiring is the only
+  worker-specific addition). A scripted outage acceptance test (`npm run test:outage`, separate
+  from `test:e2e` because it stops the real Docker Redis container) runs two scenarios — a 5s
+  Redis outage and a 5s worker outage — each with ~30 interleaved add/remove commands from 2
+  users, and asserts every command ends DONE, no duplicate favourites, correct final state per
+  (user, channel), and no duplicate jobs.
+- **Explained, not built (needs a decision before implementing):** a command stuck in PROCESSING
+  when its worker dies is only recovered via BullMQ's own stalled-job detection (default
+  `stalledInterval` ~30s) — slower than the 5-10s target, and *not* recovered at all if the
+  underlying job record is also lost (the sweep deliberately excludes PROCESSING, and a lost job
+  gives the stalled-check nothing to find). Redis's container does persist the named volume with
+  RDB snapshots on its default config, so an ordinary `docker compose stop/start` (as used by the
+  outage test) survives; only a harder crash before a snapshot, or removing the volume, loses
+  queued state — and for anything still PENDING in Postgres, the sweep recovers it regardless,
+  since it never depends on prior Redis state. The gap is specifically the PROCESSING window.
+  Proposed fix (not implemented): track when a command most recently entered PROCESSING, and have
+  the sweep also re-enqueue one stuck well past a stalled-job's own recovery window — re-running
+  an idempotent handler is safe. Needs a schema column; left for a follow-up decision.
+  **Empirically confirmed, not just theoretical:** the outage test's scenario (a) hit exactly this
+  path twice (a job's lock was lost mid-reconnect — "Missing lock for job ... moveToFinished") and
+  relied on BullMQ's stalled-job recovery to resolve it; one run recovered in 7.8s, another took
+  60.4s — right at the test's own 60s give-up threshold. Both runs still passed, but the margin
+  was thin enough that this is a live flakiness risk, not a hypothetical one.
+- **Files:** `backend/src/queue/recovery-sweep.service.ts`, `backend/src/queue/job-enqueuer.service.ts`
+  (shared add-job path, used by both `QueueCommandProcessor` and the sweep), `backend/src/queue/queue.module.ts`
+  (updated), `backend/src/queue/queue.config.ts` (updated), `backend/src/worker/worker-sweep-scheduler.service.ts`,
+  `backend/src/worker/worker.module.ts` (updated), `backend/src/commands/commands.repository.ts` (updated),
+  `backend/src/commands/queue-command-processor.ts` (updated to use the shared enqueuer),
+  `backend/test/outage.outage-spec.ts`, `backend/test/jest-outage.json`
+- **Done when:** `npm test`, `npm run test:e2e` (twice) and `npm run test:outage` all pass; `npm run build`
+  is clean.
+- **Tests:** unit tests for the sweep (PENDING only, seq order, batch size, 2s grace, skips
+  DONE/FAILED/PROCESSING, swallows queue errors, never overlaps); an e2e test forcing the queue
+  add to fail, confirming PENDING persists, then a sweep pass reaches DONE, and a second pass
+  doesn't duplicate the job or favourite; the two outage scenarios above.
+- **Commit:** `feat(backend): add recovery sweep and outage test`
+- **Time:** ~4 hrs.
+
+### Follow-up: stale-PROCESSING recovery (implemented)
+
+Closes the gap named above in "Explained, not built." `commands` gained a nullable
+`processingStartedAt` column (new migration, the `20261025054039_init` migration was left
+untouched), set by `markProcessing` and cleared by every path that leaves PROCESSING (`markDone`,
+`markFailed`, `markPendingForRetry`, and the two `tx.command.update` DONE writes inside
+`CommandWorkerService.applyOrdered`). The sweep now also finds PROCESSING commands whose
+`processingStartedAt` is older than `PROCESSING_STALE_MS` (env, default 45000) and recovers them —
+but only after `JobEnqueuerService.prepareStaleJobForReenqueue` confirms BullMQ doesn't still show
+an active/waiting/delayed/prioritized/waiting-children job for that id (left alone if so); a
+leftover completed/failed/unknown job is removed first, since BullMQ silently ignores an `add()`
+for a jobId still on record. Only then is the command reset to PENDING and re-added through the
+normal `enqueue()` path — never by re-adding against a still-PROCESSING row directly. The worker's
+`lockDuration`/`stalledInterval` were also shortened from BullMQ's 30s/30s defaults to 5s/5s
+(`maxStalledCount` left at BullMQ's default of 1), cutting the same-process stalled-recovery window
+that produced the 7.8s/60.4s readings above to about 10s worst case; `PROCESSING_STALE_MS`'s
+default is set well above that window so BullMQ's own recovery gets first chance, with the sweep as
+the backstop for the case BullMQ can't help with at all — a worker process that's gone for good, or
+a job that exceeded `maxStalledCount` and was moved to BullMQ's own "failed" bookkeeping without
+ever calling our processor again.
+- **Files:** `backend/prisma/schema.prisma`, `backend/prisma/migrations/<new>/migration.sql`,
+  `backend/src/commands/commands.repository.ts` (updated), `backend/src/worker/command-worker.service.ts`
+  (updated), `backend/src/queue/queue.config.ts` (updated), `backend/src/queue/job-enqueuer.service.ts`
+  (updated), `backend/src/queue/recovery-sweep.service.ts` (updated)
+- **Tests:** unit tests for the new sweep rules (stale PROCESSING recovered; fresh PROCESSING left
+  alone; a leftover failed job removed before re-add; an active job left alone); an e2e test leaving
+  a command in PROCESSING with its BullMQ job record deleted, confirming the sweep brings it to DONE.
+- **Also in this follow-up:** `npm run lint` split into a check-only `lint` and a fixing `lint:fix`
+  (the existing `lint` had `--fix` baked in, which reformatted ~35-40 unrelated files the first time
+  it was run during Task 10a — reverted, and structurally prevented going forward); `start:prod` was
+  already fixed to `node dist/src/main.js` during Task 9's own follow-up check (confirmed still
+  correct, not re-done).
+- **Commit:** `fix(backend): recover commands stuck in PROCESSING`
+
+## 10b. REFRESH_CHANNEL collapsing and Refresh button wiring
+
+- **Goal:** the `REFRESH_CHANNEL` handler keeps an **in-memory**, ~60-second cached copy of the
+  Astro channel list — independent of the Redis response cache built in Task 13, so refresh
+  collapsing still works even if that task is cut — so concurrent refresh requests for the same
+  channel make one Astro call; once it resolves, every pending `REFRESH_CHANNEL` command for that
+  channel is marked DONE, even across different users. Wire the frontend Refresh button (built in
+  Task 8) to actually dispatch `REFRESH_CHANNEL`.
 - **Files:** `backend/src/commands/handlers/refresh-channel.handler.ts`,
-  `backend/src/worker/recovery-sweep.ts`, `backend/src/astro/astro-list-cache.ts` (in-process
-  memory, not Redis), `frontend/components/RefreshButton` (wiring)
-- **Done when:** the PRD §9 outage acceptance test passes manually (stop Redis for 5s mid-batch
-  across 2 simulated users, restore, all commands end DONE, no duplicate favourites); two users
-  refreshing the same channel within the 60s window produce one Astro call and both commands end
-  DONE; clicking Refresh in the UI visibly updates the channel.
-- **Tests:** collapsing/caching unit test (concurrent refresh → one Astro call, N commands DONE);
-  a scripted outage/integration test.
-- **Commit:** `feat(backend): add recovery sweep and REFRESH_CHANNEL collapsing`
-- **Time:** ~3.5 hrs.
+  `backend/src/astro/astro-list-cache.ts` (in-process memory, not Redis),
+  `frontend/components/RefreshButton` (wiring)
+- **Done when:** two users refreshing the same channel within the 60s window produce one Astro
+  call and both commands end DONE; clicking Refresh in the UI visibly updates the channel.
+- **Tests:** collapsing/caching unit test (concurrent refresh → one Astro call, N commands DONE).
+- **Commit:** `feat(backend): add REFRESH_CHANNEL collapsing and wire the Refresh button`
+- **Time:** ~2 hrs.
 
 ## 11. Frontend command outbox, request timeout and offline handling
 

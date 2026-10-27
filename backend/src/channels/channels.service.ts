@@ -13,7 +13,9 @@ export class ChannelsService {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
-  async list(query: ListChannelsQueryDto): Promise<PaginatedChannels<ChannelListItem>> {
+  async list(
+    query: ListChannelsQueryDto,
+  ): Promise<PaginatedChannels<ChannelListItem>> {
     const { data, total } = await this.channelsRepository.findMany(query);
     const at = this.clock.now();
 

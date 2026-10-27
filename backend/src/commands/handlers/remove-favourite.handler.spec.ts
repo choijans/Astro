@@ -22,7 +22,7 @@ function makeCommand(overrides: Partial<Command> = {}): Command {
     processedAt: null,
     processingStartedAt: null,
     ...overrides,
-  } as Command;
+  };
 }
 
 describe('RemoveFavouriteHandler', () => {
