@@ -91,11 +91,13 @@ export interface GetChannelsParams {
 
 export class ApiError extends Error {
   readonly statusCode: number;
+  readonly retryAfterSeconds?: number;
 
-  constructor(message: string, statusCode: number) {
+  constructor(message: string, statusCode: number, retryAfterSeconds?: number) {
     super(message);
     this.name = 'ApiError';
     this.statusCode = statusCode;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -133,6 +135,18 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 429) {
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterSeconds =
+        retryAfterHeader && !Number.isNaN(Number(retryAfterHeader))
+          ? Number(retryAfterHeader)
+          : undefined;
+      throw new ApiError(
+        'Too many requests. Please wait a moment and try again.',
+        429,
+        retryAfterSeconds,
+      );
+    }
     const body = await response.json().catch(() => null);
     throw new ApiError(extractErrorMessage(body), response.status);
   }
@@ -179,4 +193,17 @@ export function removeFavourite(channelId: number, commandId: string): Promise<C
 
 export function getCommand(id: string): Promise<CommandResponse> {
   return apiFetch<CommandResponse>(`/commands/${id}`);
+}
+
+export interface CreateCommandParams {
+  id: string;
+  type: CommandResponse['type'];
+  channelId: number;
+}
+
+export function createCommand(params: CreateCommandParams): Promise<CommandResponse> {
+  return apiFetch<CommandResponse>('/commands', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 }

@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
+import { AppThrottlerGuard } from '../common/app-throttler.guard';
 import { UserId } from '../common/user-id.decorator';
 import { UserIdGuard } from '../common/user-id.guard';
 import { toCommandResponse } from '../commands/commands.types';
@@ -31,6 +32,7 @@ export class FavouritesController {
 
   @Post()
   @HttpCode(202)
+  @UseGuards(AppThrottlerGuard)
   async add(
     @Body() dto: CreateFavouriteDto,
     @UserId() userId: string,
@@ -47,6 +49,7 @@ export class FavouritesController {
 
   @Delete(':channelId')
   @HttpCode(202)
+  @UseGuards(AppThrottlerGuard)
   async remove(
     @Param('channelId', ParseIntPipe) channelId: number,
     @UserId() userId: string,

@@ -1,6 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ChannelDetailsPage } from '../components/ChannelDetailsPage';
-import { ApiError, ChannelDetail, getChannel, getFavourites } from '../lib/api';
+import { ApiError, ChannelDetail, CommandResponse, createCommand, getChannel, getFavourites } from '../lib/api';
 import { renderWithQueryClient } from '../testing/test-utils';
 
 jest.mock('next/navigation', () => ({
@@ -13,6 +14,7 @@ jest.mock('../lib/api', () => ({
   getFavourites: jest.fn(),
   addFavourite: jest.fn(),
   removeFavourite: jest.fn(),
+  createCommand: jest.fn(),
 }));
 
 function makeChannel(overrides: Partial<ChannelDetail> = {}): ChannelDetail {
@@ -92,13 +94,40 @@ describe('ChannelDetailsPage', () => {
     expect(next).not.toHaveClass('text-accent');
   });
 
-  it('shows a disabled Refresh button explaining it is not available yet', async () => {
-    (getChannel as jest.Mock).mockResolvedValue(makeChannel());
-    renderWithQueryClient(<ChannelDetailsPage idParam="1" />);
+  it('renders an enabled Refresh button for the channel', async () => {
+    (getChannel as jest.Mock).mockResolvedValue(makeChannel({ id: 7 }));
+    renderWithQueryClient(<ChannelDetailsPage idParam="7" />);
 
     const refreshButton = await screen.findByRole('button', { name: 'Refresh' });
-    expect(refreshButton).toBeDisabled();
-    expect(refreshButton).toHaveAttribute('title', 'Available in a later update');
+    expect(refreshButton).toBeEnabled();
+  });
+
+  it('clicking Refresh and settling DONE refetches the channel and shows the new title and schedule-updated time', async () => {
+    (getChannel as jest.Mock)
+      .mockResolvedValueOnce(makeChannel({ id: 7, title: 'Astro30' }))
+      .mockResolvedValueOnce(
+        makeChannel({ id: 7, title: 'Astro30 Updated', scheduleUpdatedAt: '2026-02-01T00:00:00+08:00' }),
+      );
+    (createCommand as jest.Mock).mockResolvedValue({
+      id: 'cmd-1',
+      seq: '1',
+      userId: 'user-1',
+      type: 'REFRESH_CHANNEL',
+      channelId: 7,
+      status: 'DONE',
+      error: null,
+      createdAt: '2026-01-01T00:00:00Z',
+      processedAt: '2026-01-01T00:00:00Z',
+    } satisfies CommandResponse);
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChannelDetailsPage idParam="7" />);
+
+    expect(await screen.findByText('Astro30')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(await screen.findByText('Astro30 Updated')).toBeInTheDocument();
+    await waitFor(() => expect(getChannel).toHaveBeenCalledTimes(2));
   });
 
   it('renders a not-found page when the channel does not exist (404)', async () => {

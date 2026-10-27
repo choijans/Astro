@@ -48,6 +48,21 @@ worker both run one pass on start, and the worker also runs one on an interval (
 default 5s) and whenever its Redis connection comes back after a disconnect. This is what recovers
 a command whose job never made it to Redis in the first place (Redis was down at enqueue time).
 
+## Refreshing a channel
+
+The Refresh button on a channel's details page queues a `REFRESH_CHANNEL` command: the worker
+fetches Astro's current channel list and updates that one channel's row (schedule and the other
+mapped fields). **The worker must be running** for a refresh to ever complete — same as favourites,
+it's processed asynchronously, not inline in the API request.
+
+Several refreshes arriving close together share one Astro call instead of each making their own:
+the worker keeps an in-memory copy of the last successful list for about 60 seconds
+(`ASTRO_LIST_CACHE_TTL_MS`), and concurrent requests for a stale copy merge into a single fetch. A
+channel id that's no longer in Astro's list fails immediately with no retries, since re-fetching
+won't change that. This cache is per worker process — `npm run sync` and the seed script always
+fetch fresh, and scaling the worker to several instances means each instance keeps its own copy
+rather than sharing one.
+
 ## Outage test
 
 `npm run test:outage` is a scripted version of the PRD's outage acceptance test: it submits ~30
@@ -67,6 +82,24 @@ which will interrupt anything you have running against it at the time (the dev A
 worker, a manual test). It still uses the dedicated test queue name and Redis database, and
 refuses to run against the dev ones (same guard as `test:e2e`) — the outage itself is at the
 container level, so it affects dev and test connections alike while it's down.
+
+## Rate limiting and health
+
+`POST /commands`, `POST /favourites` and `DELETE /favourites/:channelId` are rate limited — 60
+requests per 60 seconds per tracker by default (`RATE_LIMIT_MAX` / `RATE_LIMIT_TTL_MS`). No other
+route is limited: reads and `/health` always go through. The tracker is the caller's `X-User-Id`
+when it's a valid UUID, falling back to the connecting IP otherwise; see the comment on
+`AppThrottlerGuard` for the trade-off that choice makes. A limited request gets `429` in the same
+`{ statusCode, message, error }` shape every other error uses, plus a `Retry-After` header.
+**Counters are kept in memory, per process** — restarting the API resets them, and (if the API is
+ever run as more than one instance) each instance would track independently rather than sharing
+one budget.
+
+`GET /health` checks Postgres (`SELECT 1`) and Redis (`ping`), each with its own 2-second timeout
+(`HEALTH_CHECK_TIMEOUT_MS`) so one hanging dependency can't hang the endpoint. `200` with
+`{ status: "ok", checks: { database: "up", redis: "up" } }` when both are reachable, `503` naming
+which one isn't otherwise. The response never includes the underlying error, a hostname or a
+connection string — only ever "up" or "down" per check; the real failure is logged instead.
 
 ## Running the frontend
 

@@ -140,6 +140,23 @@ describe('FavouriteButton', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Internal server error');
   });
 
+  it('rolls back and shows the rate-limit message when the toggle is rejected with a 429', async () => {
+    (addFavourite as jest.Mock).mockRejectedValue(
+      new ApiError('Too many requests. Please wait a moment and try again.', 429, 30),
+    );
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Too many requests. Please wait a moment and try again.',
+    );
+  });
+
   it('rolls back when the command settles as FAILED, even though the HTTP call itself succeeded', async () => {
     (addFavourite as jest.Mock).mockResolvedValue(
       makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),

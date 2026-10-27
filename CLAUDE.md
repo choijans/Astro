@@ -41,6 +41,8 @@ BullMQ + Redis (queue/cache), Docker Compose for Postgres+Redis only (apps run v
 - Write tests together with the code, not after.
 - Keep each task's changes small and focused; the user commits them.
 - Never guess Astro API fields or response shape — check the real response (saved fixture).
+- Before finishing any task, run `npm run lint` in each app you touched and report the exit code;
+  never run `lint:fix` or `prettier --write` over the whole tree.
 - Treat `docs/prd.md` as the single source of truth.
 - If the PRD appears to conflict with the original assessment brief (a PDF kept outside the
   repo), ask me.
