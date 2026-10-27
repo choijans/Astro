@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import type { ConnectionOptions, Job } from 'bullmq';
-import { Worker } from 'bullmq';
+import { UnrecoverableError, Worker } from 'bullmq';
 import type { Command, CommandType } from '../../generated/prisma/client';
 import { CommandHandlerRegistry } from '../commands/command-handler-registry';
 import type { CommandJobData } from '../commands/queue-command-processor';
@@ -21,8 +21,11 @@ import {
 } from '../queue/queue.config';
 
 /** ADD_FAVORITE/REMOVE_FAVORITE share one ordering key: (userId, channelId).
- * REFRESH_CHANNEL isn't built yet (still rejected with 400 at the API), so it
- * never reaches the worker. */
+ * REFRESH_CHANNEL is deliberately excluded: it collapses per channel across
+ * every user via CachedAstroClient's own single-flight cache instead, and
+ * every user's command must independently reach DONE (PRD §9 rule 4), so
+ * there's no "supersede and skip" outcome to protect against — re-running
+ * the idempotent refresh handler is always safe regardless of order. */
 const ORDERED_TYPES: CommandType[] = ['ADD_FAVORITE', 'REMOVE_FAVORITE'];
 const JOB_HISTORY_LIMIT = 1000;
 
@@ -98,10 +101,15 @@ export class CommandWorkerService implements OnModuleInit, OnModuleDestroy {
       await this.applyOrdered(command);
     } catch (err) {
       const message = (err as Error).message;
-      if (isFinalAttempt) {
+      // A handler throwing UnrecoverableError (e.g. a channel id that no
+      // longer exists in Astro's list) means retrying can't help within this
+      // command's lifetime, regardless of how many attempts are left —
+      // treated as final immediately, same as BullMQ's own handling of it.
+      const isUnrecoverable = err instanceof UnrecoverableError;
+      if (isFinalAttempt || isUnrecoverable) {
         await this.commandsRepository.markFailed(commandId, message);
         this.logger.error(
-          `Command ${command.id} type=${command.type} userId=${command.userId} failed permanently after ${currentAttempt} attempts: ${message}`,
+          `Command ${command.id} type=${command.type} userId=${command.userId} failed permanently after ${currentAttempt} attempt(s): ${message}`,
         );
       } else {
         await this.commandsRepository.markPendingForRetry(commandId);

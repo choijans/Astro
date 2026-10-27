@@ -259,16 +259,6 @@ describe('Favourites & Commands (e2e)', () => {
     expect(() => BigInt(res.body.seq)).not.toThrow();
   });
 
-  it('POST /commands rejects REFRESH_CHANNEL with 400 "not supported yet"', async () => {
-    const res = await asUser(
-      userA,
-      request(app.getHttpServer())
-        .post('/commands')
-        .send({ id: randomUUID(), type: 'REFRESH_CHANNEL', channelId }),
-    ).expect(400);
-    expect(res.body.message).toMatch(/not supported yet/);
-  });
-
   it('POST /commands accepts ADD_FAVORITE directly, same as the /favourites wrapper', async () => {
     const commandId = randomUUID();
     const res = await asUser(

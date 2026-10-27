@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { AstroApiError, IAstroClient } from './astro-client.interface';
 import { parseAstroEnvelope } from './astro-envelope';
 import { AstroChannelRecord, AstroSearchLinearResponse } from './astro.types';
@@ -10,7 +10,14 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class HttpAstroClient implements IAstroClient {
-  constructor(private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS) {}
+  // @Optional(): Nest's DI container would otherwise try (and fail) to
+  // resolve a provider for the bare `number` parameter type when this class
+  // is constructed via `useClass` (as AstroModule now does) instead of `new
+  // HttpAstroClient()` directly; with @Optional(), an unresolvable param is
+  // just injected as undefined, and the default value applies as normal.
+  constructor(
+    @Optional() private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  ) {}
 
   async fetchChannels(): Promise<AstroChannelRecord[]> {
     const baseUrl = process.env.ASTRO_API_URL;

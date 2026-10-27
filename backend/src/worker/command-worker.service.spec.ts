@@ -1,4 +1,5 @@
 import type { Job } from 'bullmq';
+import { UnrecoverableError } from 'bullmq';
 import type { Command } from '../../generated/prisma/client';
 import type { CommandHandlerRegistry } from '../commands/command-handler-registry';
 import type { ICommandHandler } from '../commands/command-handler.interface';
@@ -167,6 +168,38 @@ describe('CommandWorkerService', () => {
     expect(commandsRepository.markFailed).toHaveBeenCalledWith(
       'cmd-1',
       'still broken',
+    );
+    expect(commandsRepository.markPendingForRetry).not.toHaveBeenCalled();
+  });
+
+  it('an UnrecoverableError from the handler marks FAILED immediately, even with attempts left, and still rethrows', async () => {
+    const { commandsRepository, handler, registry, prisma } = createMocks();
+    (commandsRepository.findById as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PENDING' }),
+    );
+    (commandsRepository.markProcessing as jest.Mock).mockResolvedValue(
+      makeCommand({ status: 'PROCESSING' }),
+    );
+    (handler.handle as jest.Mock).mockRejectedValue(
+      new UnrecoverableError('channel 999999 is no longer present'),
+    );
+
+    const service = new CommandWorkerService(
+      commandsRepository,
+      registry,
+      prisma,
+    );
+
+    // Only the 1st of 6 allowed attempts — a plain error here would retry.
+    await expect(
+      (service as unknown as WithProcessJob).processJob(
+        makeJob({ attemptsMade: 0, opts: { attempts: 6 } }),
+      ),
+    ).rejects.toThrow('channel 999999 is no longer present');
+
+    expect(commandsRepository.markFailed).toHaveBeenCalledWith(
+      'cmd-1',
+      'channel 999999 is no longer present',
     );
     expect(commandsRepository.markPendingForRetry).not.toHaveBeenCalled();
   });
