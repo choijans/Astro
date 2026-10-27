@@ -339,20 +339,70 @@ ever calling our processor again.
 
 ## 10b. REFRESH_CHANNEL collapsing and Refresh button wiring
 
-- **Goal:** the `REFRESH_CHANNEL` handler keeps an **in-memory**, ~60-second cached copy of the
-  Astro channel list — independent of the Redis response cache built in Task 13, so refresh
-  collapsing still works even if that task is cut — so concurrent refresh requests for the same
-  channel make one Astro call; once it resolves, every pending `REFRESH_CHANNEL` command for that
-  channel is marked DONE, even across different users. Wire the frontend Refresh button (built in
-  Task 8) to actually dispatch `REFRESH_CHANNEL`.
-- **Files:** `backend/src/commands/handlers/refresh-channel.handler.ts`,
-  `backend/src/astro/astro-list-cache.ts` (in-process memory, not Redis),
-  `frontend/components/RefreshButton` (wiring)
-- **Done when:** two users refreshing the same channel within the 60s window produce one Astro
-  call and both commands end DONE; clicking Refresh in the UI visibly updates the channel.
-- **Tests:** collapsing/caching unit test (concurrent refresh → one Astro call, N commands DONE).
-- **Commit:** `feat(backend): add REFRESH_CHANNEL collapsing and wire the Refresh button`
-- **Time:** ~2 hrs.
+- **Goal (Part A, backend):** `POST /commands` accepts `REFRESH_CHANNEL` through the same
+  `CommandsService.enqueue()` path as the other two types (channel-existence 404 check, persist
+  PENDING, enqueue with `jobId` = the command UUID) — the earlier 400 "not supported yet" guard is
+  removed. `RefreshChannelHandler` fetches the channel list via `CachedAstroClient`, finds the
+  record for the command's `channelId`, maps it with the existing `mapAstroChannel`, and updates
+  only that channel's row (never `createdAt`); `scheduleUpdatedAt` is the cache snapshot's own
+  fetch time, not the command's processing time, so several commands sharing one cached fetch all
+  agree on the same value. `CachedAstroClient` wraps the real `IAstroClient` behind `ASTRO_CLIENT`:
+  an in-memory, single-flight cache of the last successful list for `ASTRO_LIST_CACHE_TTL_MS`
+  (default 60000) — concurrent calls while the cache is stale merge into one HTTP call, a call
+  within the TTL makes none, and a failure is never cached. Only `RefreshChannelHandler` uses it,
+  via a new `AstroModule` (first real NestJS-DI registration of `ASTRO_CLIENT` — `npm run sync` and
+  the seed script keep constructing `HttpAstroClient`/`FixtureAstroClient` by hand); it's wired into
+  `WorkerModule` only, since the API process never talks to Astro. `REFRESH_CHANNEL` is explicitly
+  excluded from the per-(user, channel) ordering/supersede check: it collapses per channel across
+  every user via the cache instead, and every user's own command must still independently reach
+  DONE (PRD §9 rule 4), so there's no "supersede and skip" outcome to protect — re-running the
+  idempotent handler is always safe regardless of order. A channel id missing from Astro's current
+  list is a permanent failure (`BullMQ`'s `UnrecoverableError`, thrown from the handler and treated
+  as final by the worker regardless of attempts left) — retrying within the same command's lifetime
+  can't fix it. A transient failure (network, timeout, bad `responseCode`, all surfaced as
+  `AstroApiError`) is left to propagate and goes through the normal retry/backoff path.
+- **Explained, as asked:** the cache lives in one process's memory, nothing shared (no Redis). With
+  today's single worker process that's exactly "one shared ~60s copy." If the worker is ever scaled
+  to several instances, each keeps its own independent copy and in-flight request — two
+  `REFRESH_CHANNEL` commands landing on two different worker processes at the same moment would
+  still each trigger their own Astro call, and their `scheduleUpdatedAt` values could differ by up
+  to the TTL. That's an accepted gap: a real fix needs a shared cache/lock (Redis), which is
+  deliberately out of scope here, same reasoning as keeping this cache independent of the Redis
+  response cache.
+- **Goal (Part B, frontend, separate commit):** the Refresh button on `/channels/:id` is enabled.
+  Click sends `POST /commands { id: crypto.randomUUID(), type: 'REFRESH_CHANNEL', channelId }`,
+  then polls `GET /commands/:id` with the same `pollUntilSettled` favourites already use (not
+  copied). No optimistic change: while pending the button is disabled, shows "Refreshing…" and sets
+  `aria-busy`; a second click while pending is ignored. On DONE, the channel detail query and every
+  channel list query are invalidated so the schedule and "Schedule updated" time refresh. On FAILED
+  or an HTTP error, a small non-blocking `role="status"` message appears and the button re-enables.
+  On a poll timeout, a quiet "Still refreshing…" message appears, polling stops, and the button
+  re-enables — same shape as `FavouriteButton`'s own timeout handling.
+- **Files:** `backend/src/commands/commands.service.ts` (updated), `backend/src/astro/cached-astro-client.ts`,
+  `backend/src/astro/astro.module.ts`, `backend/src/astro/astro-client.ts` (updated — `@Optional()`
+  on `HttpAstroClient`'s `timeoutMs` param so it resolves under Nest's DI container for the first
+  time), `backend/src/commands/handlers/refresh-channel.handler.ts`,
+  `backend/src/worker/worker.module.ts` (updated), `backend/src/worker/command-worker.service.ts`
+  (updated — `UnrecoverableError` handling), `frontend/hooks/useRefreshChannel.ts`,
+  `frontend/components/RefreshButton.tsx`, `frontend/components/ChannelDetailsPage.tsx` (updated),
+  `frontend/lib/api.ts` (updated — `createCommand`)
+- **Done when:** `POST /commands` with `REFRESH_CHANNEL` returns 202 PENDING and ends DONE once the
+  worker runs it; two users refreshing the same channel at once produce one Astro call and both
+  commands end DONE; a channel missing from Astro's list ends FAILED with no retries; pressing
+  Refresh in the UI visibly updates the "Schedule updated" time.
+- **Tests:** unit — handler updates only the target row, `scheduleUpdatedAt` equals the fetch time,
+  a missing channel fails without retries, a transient failure retries and later succeeds,
+  `CachedAstroClient`'s single-flight/TTL/failure-not-cached/fetch-time-exposed behavior, the
+  worker's `UnrecoverableError` short-circuit. E2E (test DB/queue, fake Astro client, nothing calls
+  the real Astro): 202 → worker → updated detail with a newer `scheduleUpdatedAt`; two concurrent
+  refreshes of one channel → one fake-client call, both DONE; unknown channel → 404; missing-from-
+  list channel → FAILED with `attempts === 1`; another channel's row is untouched. RTL — click sends
+  the right request and starts polling; disabled + `aria-busy` while pending; DONE refetches and
+  shows new data; FAILED and HTTP-error both show the message and re-enable the button; a second
+  click while pending is ignored; timeout shows "Still refreshing…".
+- **Commit:** `feat(backend): add REFRESH_CHANNEL command with shared Astro fetch` (backend),
+  `feat(frontend): wire channel refresh button` (frontend, separate commit)
+- **Time:** ~4 hrs.
 
 ## 11. Frontend command outbox, request timeout and offline handling
 
@@ -376,15 +426,58 @@ ever calling our processor again.
 
 ## 12. Rate limiting + health endpoint
 
-- **Goal:** rate limiting on exactly `POST /commands`, `POST /favourites`, and
-  `DELETE /favourites/:channelId`; `/health` checking DB and Redis connectivity.
-- **Files:** `backend/src/health/*`, `backend/src/main.ts` (rate limiter config)
-- **Done when:** the three named write endpoints hit 429 under rapid repeat calls, other
-  endpoints don't; `/health` returns 200 normally and 503 with DB or Redis down.
-- **Tests:** Supertest for `/health` both states; a 429-threshold test scoped to exactly those
-  three routes.
-- **Commit:** `feat(backend): add rate limiting and health endpoint`
-- **Time:** ~1.5 hrs.
+- **Goal (Part A, backend):** `@nestjs/throttler@^6.7.1` (current stable; peer-compatible with
+  `@nestjs/common`/`core@^11` and `reflect-metadata@^0.2.2`, both already pinned), applied via a
+  custom `AppThrottlerGuard` with `@UseGuards` on exactly the three write-endpoint handlers
+  (`POST /commands`, `POST /favourites`, `DELETE /favourites/:channelId`) — never as a global
+  `APP_GUARD`, so reads and `/health` are never limited. Limit/window come from env
+  (`RATE_LIMIT_MAX` default 60, `RATE_LIMIT_TTL_MS` default 60000, both milliseconds for the TTL).
+  The tracking key is `X-User-Id` when it's a syntactically valid UUID, else the connecting IP —
+  see `AppThrottlerGuard`'s own doc comment for the one-paragraph trade-off (a client that rotates
+  its UUID per request gets an unlimited budget; IP tracking is unreliable behind an untrusted
+  proxy). `AppThrottlerGuard.throwThrottlingException` replaces the library's default
+  `ThrottlerException` (which renders as `{statusCode, message}` only) with a plain `HttpException`
+  carrying the full `{statusCode, message, error}` shape every other error in this app uses; the
+  base guard already sets `Retry-After` (and the `X-RateLimit-*` headers) before that's thrown.
+  `GET /health` is hand-written (no `@nestjs/terminus`): `HealthService` runs a Postgres
+  `SELECT 1` and a Redis `ping` in parallel, each wrapped in its own 2-second timeout
+  (`HEALTH_CHECK_TIMEOUT_MS`) that clears its fallback timer on whichever side wins, so a hanging
+  dependency can't hang the endpoint or leak timers. `HealthController` returns `200
+  {status:"ok", checks:{database,redis}}` when both are "up", or throws
+  `ServiceUnavailableException({status:"error", checks})` (passing an object makes it the entire
+  body, no extra wrapper) otherwise. The real error (which can carry a hostname or connection
+  string) is only ever logged, never returned.
+- **Goal (Part B, frontend, separate commit):** `apiFetch` special-cases a `429` response before
+  trying to parse its body: throws `ApiError('Too many requests. Please wait a moment and try
+  again.', 429, retryAfterSeconds?)`, reading `Retry-After` if the header is present. Fixed a real
+  bug found while doing this: `RefreshButton` was showing a hardcoded generic message for every
+  error (including a 429) instead of the real one — now matches `FavouriteButton`'s existing
+  pattern (`instanceof Error ? error.message : ...`), so both surfaces show the actual 429 message.
+- **Files:** `backend/src/common/rate-limit.config.ts`, `backend/src/common/app-throttler.guard.ts`
+  (+ `.spec.ts`), `backend/src/health/*` (`health.module.ts`, `health.controller.ts`,
+  `health.service.ts` + `.spec.ts`, `health.tokens.ts`), `backend/src/app.module.ts` (updated —
+  registers `ThrottlerModule.forRoot` and imports `HealthModule`), `backend/src/commands/commands.controller.ts`
+  / `backend/src/favourites/favourites.controller.ts` (updated — `@UseGuards(AppThrottlerGuard)`
+  on the three write handlers only), `frontend/lib/api.ts` (updated), `frontend/components/RefreshButton.tsx`
+  (updated — error-message fix).
+- **Done when:** the three named write endpoints hit 429 (standard error shape, `Retry-After`
+  header) under rapid repeat calls from one tracker; a second tracker is unaffected; the window
+  resets; `GET /channels` is never limited even well above the threshold; `/health` returns 200
+  normally and 503 (naming the down check) with a dependency failing.
+- **Tests:** unit — `AppThrottlerGuard`'s tracker selection and custom exception shape;
+  `HealthService` with all up, database down, Redis down, both down, and a check that times out
+  (and doesn't leak its fallback timer when it doesn't). E2E — each of the three routes 429s after
+  the limit (small limit/window via `overrideProvider(getOptionsToken())`, not env — ES imports are
+  hoisted above any same-file `process.env` assignment, so the real fix is overriding the provider
+  directly); two different users/trackers have separate counters; the window resets; `GET /channels`
+  never limited; `/health` 200 against the real Postgres/Redis and 503 via an overridden
+  `HealthService` provider (no container ever stopped); the 503 body never leaks a connection
+  string or hostname. RTL — the 429 client error and one favourite toggle failing with 429.
+- **Explicitly not built (per instructions):** caching, structured logging, the range filter, the
+  offline outbox.
+- **Commit:** `feat(backend): add rate limiting and health check` (backend),
+  `feat(frontend): show a message when rate limited` (frontend, separate commit)
+- **Time:** ~3 hrs.
 
 ## 13. Redis response caching — cuttable (2nd to cut)
 

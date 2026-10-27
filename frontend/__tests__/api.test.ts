@@ -56,6 +56,36 @@ describe('API error handling', () => {
     await expect(getChannels({})).rejects.toMatchObject({ statusCode: 500 });
   });
 
+  it('turns a 429 into a clear, fixed message and reads Retry-After when present', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: (name: string) => (name === 'Retry-After' ? '42' : null) },
+      json: async () => ({ statusCode: 429, message: 'ThrottlerException: Too Many Requests' }),
+    }) as jest.Mock;
+
+    await expect(getChannels({})).rejects.toMatchObject({
+      message: 'Too many requests. Please wait a moment and try again.',
+      statusCode: 429,
+      retryAfterSeconds: 42,
+    });
+  });
+
+  it('a 429 without a Retry-After header still gets the clear message, with no retryAfterSeconds', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: () => null },
+      json: async () => ({ statusCode: 429, message: 'ThrottlerException: Too Many Requests' }),
+    }) as jest.Mock;
+
+    await expect(getChannels({})).rejects.toMatchObject({
+      message: 'Too many requests. Please wait a moment and try again.',
+      statusCode: 429,
+      retryAfterSeconds: undefined,
+    });
+  });
+
   it('sends the X-User-Id header on every request', async () => {
     mockFetchOnce(200, { data: [], page: 1, limit: 24, total: 0, hasNextPage: false });
 

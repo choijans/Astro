@@ -11,6 +11,7 @@ import { ChannelLogo } from './ChannelLogo';
 import { ErrorState } from './ErrorState';
 import { FavouriteButton } from './FavouriteButton';
 import { NotFoundChannel } from './NotFoundChannel';
+import { RefreshButton } from './RefreshButton';
 
 function isValidChannelId(idParam: string): boolean {
   return /^[1-9]\d*$/.test(idParam);
@@ -75,14 +76,7 @@ export function ChannelDetailsPage({ idParam }: { idParam: string }) {
         Schedule updated: {formatDateTime(channel.scheduleUpdatedAt)}
       </p>
 
-      <button
-        type="button"
-        disabled
-        title="Available in a later update"
-        className="mt-4 h-11 cursor-not-allowed rounded-full border border-border bg-surface-muted px-4 text-sm font-medium text-text-muted"
-      >
-        Refresh
-      </button>
+      <RefreshButton channelId={channel.id} />
 
       <section className="mt-6">
         <h2 className="text-sm font-semibold text-text">Now and next</h2>

@@ -3,8 +3,9 @@
 Full Stack Engineering Technical Assessment — browse Astro channels, view details, manage
 favourites, and process queued commands (add/remove favourite, refresh channel).
 
-Status: repo scaffolding in progress. See `docs/prd.md` for the product requirements and
-`docs/plan.md` for the build plan.
+Status: backend and frontend are implemented through rate limiting and health checks (see
+`docs/plan.md` for the full task list and what's left). See `docs/prd.md` for the product
+requirements.
 
 ## Setup (backend, so far)
 
@@ -20,6 +21,24 @@ Status: repo scaffolding in progress. See `docs/prd.md` for the product requirem
 
 Seeding/sync: `npm run seed` loads the committed fixture; `npm run sync` pulls fresh data from
 the live Astro endpoint. Both are idempotent upserts.
+
+## Calling the API — the `X-User-Id` header
+
+Every write route (`POST /commands`, `POST /favourites`, `DELETE /favourites/:channelId`) and
+`GET /favourites` require an `X-User-Id` header whose value is a UUID — this is how the API tells
+one user's favourites and commands apart; there's no login. The frontend generates one with
+`crypto.randomUUID()` on first load and stores it in `localStorage`, so this only matters if
+you're calling the API directly (curl/Postman) rather than through the UI, e.g.:
+
+```
+curl -X POST http://localhost:3001/favourites \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: 11111111-1111-1111-1111-111111111111" \
+  -d '{"channelId": 100}'
+```
+
+A missing or non-UUID header on these routes gets a `400`. `GET /channels` and `GET /health` don't
+need it.
 
 ## Running the worker
 
@@ -48,6 +67,21 @@ worker both run one pass on start, and the worker also runs one on an interval (
 default 5s) and whenever its Redis connection comes back after a disconnect. This is what recovers
 a command whose job never made it to Redis in the first place (Redis was down at enqueue time).
 
+## Refreshing a channel
+
+The Refresh button on a channel's details page queues a `REFRESH_CHANNEL` command: the worker
+fetches Astro's current channel list and updates that one channel's row (schedule and the other
+mapped fields). **The worker must be running** for a refresh to ever complete — same as favourites,
+it's processed asynchronously, not inline in the API request.
+
+Several refreshes arriving close together share one Astro call instead of each making their own:
+the worker keeps an in-memory copy of the last successful list for about 60 seconds
+(`ASTRO_LIST_CACHE_TTL_MS`), and concurrent requests for a stale copy merge into a single fetch. A
+channel id that's no longer in Astro's list fails immediately with no retries, since re-fetching
+won't change that. This cache is per worker process — `npm run sync` and the seed script always
+fetch fresh, and scaling the worker to several instances means each instance keeps its own copy
+rather than sharing one.
+
 ## Outage test
 
 `npm run test:outage` is a scripted version of the PRD's outage acceptance test: it submits ~30
@@ -67,6 +101,24 @@ which will interrupt anything you have running against it at the time (the dev A
 worker, a manual test). It still uses the dedicated test queue name and Redis database, and
 refuses to run against the dev ones (same guard as `test:e2e`) — the outage itself is at the
 container level, so it affects dev and test connections alike while it's down.
+
+## Rate limiting and health
+
+`POST /commands`, `POST /favourites` and `DELETE /favourites/:channelId` are rate limited — 60
+requests per 60 seconds per tracker by default (`RATE_LIMIT_MAX` / `RATE_LIMIT_TTL_MS`). No other
+route is limited: reads and `/health` always go through. The tracker is the caller's `X-User-Id`
+when it's a valid UUID, falling back to the connecting IP otherwise; see the comment on
+`AppThrottlerGuard` for the trade-off that choice makes. A limited request gets `429` in the same
+`{ statusCode, message, error }` shape every other error uses, plus a `Retry-After` header.
+**Counters are kept in memory, per process** — restarting the API resets them, and (if the API is
+ever run as more than one instance) each instance would track independently rather than sharing
+one budget.
+
+`GET /health` checks Postgres (`SELECT 1`) and Redis (`ping`), each with its own 2-second timeout
+(`HEALTH_CHECK_TIMEOUT_MS`) so one hanging dependency can't hang the endpoint. `200` with
+`{ status: "ok", checks: { database: "up", redis: "up" } }` when both are reachable, `503` naming
+which one isn't otherwise. The response never includes the underlying error, a hostname or a
+connection string — only ever "up" or "down" per check; the real failure is logged instead.
 
 ## Running the frontend
 
@@ -97,6 +149,24 @@ container level, so it affects dev and test connections alike while it's down.
   handler's actual write happen atomically — two jobs for the same (user, channel) can't both
   pass the check before either commits.
 
+## Testing
+
+| Command | Where | What it checks |
+| --- | --- | --- |
+| `cd backend && npm test` | backend | Unit tests (services, guards, handlers, mappers) |
+| `cd backend && npm run test:e2e` | backend | Supertest against a real Postgres/Redis test instance — channels, favourites, commands, rate limiting, health |
+| `cd backend && npm run test:outage` | backend | Scripted outage acceptance test (see "Outage test" above) — separate because it stops the real, shared Redis container |
+| `cd frontend && npm test` | frontend | RTL/Jest component and hook tests |
+
+Backend unit + e2e + frontend unit is what CI would run; `test:outage` is run manually since it
+briefly stops a shared container (see "Outage test" above for why).
+
 ## How I built this
 
-
+Built task by task against `docs/plan.md`, one task per branch, tests written alongside the code
+for that task rather than after it. Each task stopped at its own "done when" check (lint, unit
+tests, e2e, build) before the next one started, so the history in `git log` is one feature commit
+(plus a merge commit) per task rather than one large commit at the end. `docs/prd.md` was the
+source of truth throughout; where it didn't specify something (e.g. the rate-limit tracking key,
+how to shape the worker's Astro-list cache), the decision and its trade-off are documented inline
+in the relevant README section or in code comments, not left implicit.

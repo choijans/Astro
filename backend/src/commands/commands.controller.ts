@@ -8,6 +8,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { AppThrottlerGuard } from '../common/app-throttler.guard';
 import { UserId } from '../common/user-id.decorator';
 import { UserIdGuard } from '../common/user-id.guard';
 import { CommandsService } from './commands.service';
@@ -21,6 +22,7 @@ export class CommandsController {
 
   @Post()
   @HttpCode(202)
+  @UseGuards(AppThrottlerGuard)
   async create(@Body() dto: CreateCommandDto, @UserId() userId: string) {
     const command = await this.commandsService.enqueue({
       id: dto.id,
