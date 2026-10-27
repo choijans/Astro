@@ -122,7 +122,7 @@ describe('RefreshButton', () => {
     );
   });
 
-  it('shows the real error message and re-enables the button when the command settles as FAILED', async () => {
+  it('shows the friendly message (not the raw FAILED reason) and re-enables the button when the command settles as FAILED', async () => {
     (createCommand as jest.Mock).mockResolvedValue(
       makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),
     );
@@ -131,22 +131,41 @@ describe('RefreshButton', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Refresh' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent('Channel does not exist'),
-    );
+    await waitFor(() => {
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent("Couldn't refresh the schedule. Try again.");
+      expect(status).not.toHaveTextContent('Channel does not exist');
+    });
     expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled();
   });
 
-  it('shows the real error message and re-enables the button on an HTTP error', async () => {
+  it('shows the friendly message (not the raw server text) and re-enables the button on a non-429 HTTP error', async () => {
     (createCommand as jest.Mock).mockRejectedValue(new ApiError('Internal server error', 500));
     const user = userEvent.setup();
     renderWithQueryClient(<RefreshButton channelId={7} />);
 
     await user.click(await screen.findByRole('button', { name: 'Refresh' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent('Internal server error'),
-    );
+    await waitFor(() => {
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent("Couldn't refresh the schedule. Try again.");
+      expect(status).not.toHaveTextContent('Internal server error');
+    });
+    expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled();
+  });
+
+  it('shows the friendly message on a network error (not an ApiError at all)', async () => {
+    (createCommand as jest.Mock).mockRejectedValue(new Error('Failed to fetch'));
+    const user = userEvent.setup();
+    renderWithQueryClient(<RefreshButton channelId={7} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent("Couldn't refresh the schedule. Try again.");
+      expect(status).not.toHaveTextContent('Failed to fetch');
+    });
     expect(screen.getByRole('button', { name: 'Refresh' })).not.toBeDisabled();
   });
 

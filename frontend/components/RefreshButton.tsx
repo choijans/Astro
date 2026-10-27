@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRefreshChannel } from '../hooks/useRefreshChannel';
+import { ApiError } from '../lib/api';
 import { PollTimeoutError } from '../lib/poll-command';
 
 interface RefreshButtonProps {
@@ -23,10 +24,14 @@ export function RefreshButton({ channelId }: RefreshButtonProps) {
     mutation.mutate();
   }
 
+  // Raw error text (a command's FAILED reason, a non-429 HTTP status, a
+  // network failure) never reaches the user — only ever this fixed message,
+  // or the fixed 429 one, which is itself not server-sourced text (apiFetch
+  // replaces whatever the server sent with its own clear string).
   const message = mutation.isError
     ? mutation.error instanceof PollTimeoutError
       ? 'Still refreshing…'
-      : mutation.error instanceof Error
+      : mutation.error instanceof ApiError && mutation.error.statusCode === 429
         ? mutation.error.message
         : "Couldn't refresh the schedule. Try again."
     : null;

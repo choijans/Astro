@@ -3,6 +3,7 @@
 import { MouseEvent, useEffect } from 'react';
 import { useIsFavourite } from '../hooks/useFavouritesQuery';
 import { useToggleFavourite } from '../hooks/useToggleFavourite';
+import { ApiError } from '../lib/api';
 import { PollTimeoutError } from '../lib/poll-command';
 import { HeartIcon } from './HeartIcon';
 
@@ -50,11 +51,14 @@ export function FavouriteButton({ channelId, channelTitle }: FavouriteButtonProp
           role="status"
           className="absolute top-full right-0 z-20 mt-1 w-max max-w-[180px] rounded-md bg-text px-2 py-1 text-xs text-surface shadow-md"
         >
+          {/* Raw error text (a command's FAILED reason, a non-429 HTTP
+              status, a network failure) never reaches the user — only ever
+              this fixed message, or the fixed 429 one. */}
           {mutation.error instanceof PollTimeoutError
             ? 'Still syncing…'
-            : mutation.error instanceof Error
+            : mutation.error instanceof ApiError && mutation.error.statusCode === 429
               ? mutation.error.message
-              : 'Something went wrong.'}
+              : 'The request failed. Please try again.'}
         </p>
       )}
     </span>

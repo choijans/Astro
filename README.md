@@ -3,8 +3,9 @@
 Full Stack Engineering Technical Assessment — browse Astro channels, view details, manage
 favourites, and process queued commands (add/remove favourite, refresh channel).
 
-Status: repo scaffolding in progress. See `docs/prd.md` for the product requirements and
-`docs/plan.md` for the build plan.
+Status: backend and frontend are implemented through rate limiting and health checks (see
+`docs/plan.md` for the full task list and what's left). See `docs/prd.md` for the product
+requirements.
 
 ## Setup (backend, so far)
 
@@ -20,6 +21,24 @@ Status: repo scaffolding in progress. See `docs/prd.md` for the product requirem
 
 Seeding/sync: `npm run seed` loads the committed fixture; `npm run sync` pulls fresh data from
 the live Astro endpoint. Both are idempotent upserts.
+
+## Calling the API — the `X-User-Id` header
+
+Every write route (`POST /commands`, `POST /favourites`, `DELETE /favourites/:channelId`) and
+`GET /favourites` require an `X-User-Id` header whose value is a UUID — this is how the API tells
+one user's favourites and commands apart; there's no login. The frontend generates one with
+`crypto.randomUUID()` on first load and stores it in `localStorage`, so this only matters if
+you're calling the API directly (curl/Postman) rather than through the UI, e.g.:
+
+```
+curl -X POST http://localhost:3001/favourites \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: 11111111-1111-1111-1111-111111111111" \
+  -d '{"channelId": 100}'
+```
+
+A missing or non-UUID header on these routes gets a `400`. `GET /channels` and `GET /health` don't
+need it.
 
 ## Running the worker
 
@@ -130,6 +149,24 @@ connection string — only ever "up" or "down" per check; the real failure is lo
   handler's actual write happen atomically — two jobs for the same (user, channel) can't both
   pass the check before either commits.
 
+## Testing
+
+| Command | Where | What it checks |
+| --- | --- | --- |
+| `cd backend && npm test` | backend | Unit tests (services, guards, handlers, mappers) |
+| `cd backend && npm run test:e2e` | backend | Supertest against a real Postgres/Redis test instance — channels, favourites, commands, rate limiting, health |
+| `cd backend && npm run test:outage` | backend | Scripted outage acceptance test (see "Outage test" above) — separate because it stops the real, shared Redis container |
+| `cd frontend && npm test` | frontend | RTL/Jest component and hook tests |
+
+Backend unit + e2e + frontend unit is what CI would run; `test:outage` is run manually since it
+briefly stops a shared container (see "Outage test" above for why).
+
 ## How I built this
 
-
+Built task by task against `docs/plan.md`, one task per branch, tests written alongside the code
+for that task rather than after it. Each task stopped at its own "done when" check (lint, unit
+tests, e2e, build) before the next one started, so the history in `git log` is one feature commit
+(plus a merge commit) per task rather than one large commit at the end. `docs/prd.md` was the
+source of truth throughout; where it didn't specify something (e.g. the rate-limit tracking key,
+how to shape the worker's Astro-list cache), the decision and its trade-off are documented inline
+in the relevant README section or in code comments, not left implicit.

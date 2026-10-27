@@ -123,7 +123,7 @@ describe('FavouriteButton', () => {
     expect(addCommandId).not.toBe(removeCommandId);
   });
 
-  it('rolls back and shows the message on an HTTP error', async () => {
+  it('rolls back and shows the friendly message (not the raw server text) on an HTTP error', async () => {
     (addFavourite as jest.Mock).mockRejectedValue(new ApiError('Internal server error', 500));
     const user = userEvent.setup();
     renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
@@ -137,7 +137,9 @@ describe('FavouriteButton', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('status')).toHaveTextContent('Internal server error');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('The request failed. Please try again.');
+    expect(status).not.toHaveTextContent('Internal server error');
   });
 
   it('rolls back and shows the rate-limit message when the toggle is rejected with a 429', async () => {
@@ -157,7 +159,7 @@ describe('FavouriteButton', () => {
     );
   });
 
-  it('rolls back when the command settles as FAILED, even though the HTTP call itself succeeded', async () => {
+  it('rolls back and shows the friendly message (not the raw FAILED reason) when the command settles as FAILED, even though the HTTP call itself succeeded', async () => {
     (addFavourite as jest.Mock).mockResolvedValue(
       makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),
     );
@@ -169,7 +171,9 @@ describe('FavouriteButton', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('status')).toHaveTextContent('Channel does not exist');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('The request failed. Please try again.');
+    expect(status).not.toHaveTextContent('Channel does not exist');
   });
 
   it('ignores further clicks on the same channel while a mutation is in flight', async () => {
@@ -274,7 +278,7 @@ describe('FavouriteButton', () => {
     });
   });
 
-  it('rolls back after polling resolves the command as FAILED', async () => {
+  it('rolls back and shows the friendly message (not the raw FAILED reason) after polling resolves the command as FAILED', async () => {
     (addFavourite as jest.Mock).mockResolvedValue(makeCommand({ status: 'PENDING' }));
     (pollUntilSettled as jest.Mock).mockResolvedValue(
       makeCommand({ status: 'FAILED', error: 'Channel does not exist' }),
@@ -287,7 +291,9 @@ describe('FavouriteButton', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Add Astro30 to favourites' })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('status')).toHaveTextContent('Channel does not exist');
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('The request failed. Please try again.');
+    expect(status).not.toHaveTextContent('Channel does not exist');
   });
 
   it('a poll timeout keeps the heart flipped and shows a quiet "Still syncing" message instead of rolling back', async () => {
