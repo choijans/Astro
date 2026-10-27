@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import type { Command } from '../../generated/prisma/client';
 import type { CommandsRepository } from './commands.repository';
@@ -247,8 +243,31 @@ describe('CommandsService.enqueue', () => {
     expect(processor.process).not.toHaveBeenCalled();
   });
 
-  it('rejects REFRESH_CHANNEL with 400 before touching the repository', async () => {
+  it('accepts REFRESH_CHANNEL through the same path as the other command types', async () => {
     const { repository, processor } = createMocks();
+    const service = new CommandsService(repository, processor);
+
+    const result = await service.enqueue({
+      id: 'cmd-1',
+      userId: 'user-1',
+      type: 'REFRESH_CHANNEL',
+      channelId: 42,
+    });
+
+    expect(repository.channelExists).toHaveBeenCalledWith(42);
+    expect(repository.create).toHaveBeenCalledWith({
+      id: 'cmd-1',
+      userId: 'user-1',
+      type: 'REFRESH_CHANNEL',
+      channelId: 42,
+    });
+    expect(processor.process).toHaveBeenCalled();
+    expect(result.status).toBe('DONE');
+  });
+
+  it('still 404s a REFRESH_CHANNEL for an unknown channel, same as the other types', async () => {
+    const { repository, processor } = createMocks();
+    (repository.channelExists as jest.Mock).mockResolvedValue(false);
     const service = new CommandsService(repository, processor);
 
     await expect(
@@ -256,10 +275,9 @@ describe('CommandsService.enqueue', () => {
         id: 'cmd-1',
         userId: 'user-1',
         type: 'REFRESH_CHANNEL',
-        channelId: 42,
+        channelId: 999999,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(repository.findById).not.toHaveBeenCalled();
+    ).rejects.toBeInstanceOf(NotFoundException);
     expect(repository.create).not.toHaveBeenCalled();
   });
 });

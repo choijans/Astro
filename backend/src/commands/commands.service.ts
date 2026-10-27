@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -36,10 +35,6 @@ export class CommandsService {
   ) {}
 
   async enqueue(params: EnqueueParams): Promise<Command> {
-    if (params.type === 'REFRESH_CHANNEL') {
-      throw new BadRequestException('REFRESH_CHANNEL is not supported yet');
-    }
-
     const existing = await this.commandsRepository.findById(params.id);
     if (existing) {
       return this.reconcileWithExisting(existing, params);
