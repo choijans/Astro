@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { OfflineIndicator } from './OfflineIndicator';
 
 export function SiteHeader() {
   return (
@@ -16,6 +17,7 @@ export function SiteHeader() {
         >
           Favourites
         </Link>
+        <OfflineIndicator />
       </nav>
     </header>
   );

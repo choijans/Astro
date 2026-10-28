@@ -162,6 +162,28 @@ caching is disabled.
    ```
 4. Open `http://localhost:3000`.
 
+## Working offline
+
+Every request from the frontend aborts after `NEXT_PUBLIC_REQUEST_TIMEOUT_MS` (default 10000ms) and
+is treated the same as any other network failure — the server gave no answer at all, as opposed to
+answering with an HTTP error. A favourite toggle that fails this way is **not** rolled back: the
+heart stays in its new state and the command is queued in an outbox (`localStorage`, capped at 100
+entries, each expiring after 24 hours) under the same command UUID that was about to be sent. A
+small indicator in the header shows how many changes are waiting.
+
+The outbox is flushed — one entry at a time, oldest first, same UUIDs — on page load, when the
+browser fires its `online` event, when the tab becomes visible again, and on its own retry timer
+(starts at 2s, doubles up to 30s, resets after a successful send) for as long as it isn't empty.
+`navigator.onLine` is never trusted to decide anything — it's unreliable — only used as one of
+several triggers to attempt a flush. A command the server already knew about (e.g. the first
+attempt actually got through before the response was lost) just settles immediately, since the
+same UUID is reused and the backend's idempotency rule treats it as the existing command. A command
+that can never succeed (400, 404 or 409 on resend) is dropped with a one-line message rather than
+retried forever; a 429 or 5xx is kept and retried.
+
+This only covers favourite toggles (`ADD_FAVORITE`/`REMOVE_FAVORITE`) — `REFRESH_CHANNEL` is never
+queued this way.
+
 ## API notes
 
 - Errors are always `{statusCode, message, error}`, but `message` is a **string** for most

@@ -406,21 +406,61 @@ ever calling our processor again.
 
 ## 11. Frontend command outbox, request timeout and offline handling
 
-- **Goal:** a `localStorage` outbox holds commands the API couldn't accept, resending them with
-  the same client UUID (generated in Task 7) once the connection returns. `lib/api.ts`'s
-  `apiFetch` gets a client-side request timeout (`AbortSignal.timeout(...)` or equivalent) — Task
-  8 found that a dead connection can leave `fetch` never settling at all, so no HTTP error ever
-  arrives to roll an optimistic update back; a timeout turns that into a real, handleable error.
-  Offline handling (e.g. `navigator.onLine` / `online`/`offline` events) decides when to flush the
-  outbox. PENDING → DONE/FAILED status reconciliation itself was moved into Task 9's polling, so
-  it isn't repeated here.
-- **Files:** `frontend/lib/outbox.ts`, `frontend/lib/api.ts` (request timeout), `frontend/store/*`
-  (offline/online state), pending-state UI indicators for outbox items
-- **Done when:** submitting a command while the API is unreachable queues it in `localStorage`;
-  reconnecting resends it with the same UUID and no duplicate is created; a hung request times out
-  and rolls back instead of leaving the UI stuck.
-- **Tests:** unit test for outbox persistence and resend-with-same-UUID; a test asserting a
-  timed-out request rolls back; an online/offline transition test for outbox flushing.
+- **Goal:** `lib/api.ts`'s `apiFetch` aborts every request after `NEXT_PUBLIC_REQUEST_TIMEOUT_MS`
+  (default 10000) via `AbortSignal.timeout`, falling back to `AbortController` + `setTimeout` (its
+  own timer explicitly cleared once the request settles, either way) where `AbortSignal.timeout`
+  isn't available. Two error classes distinguish the failure kinds: `NetworkError` (`fetch` itself
+  rejected, or was aborted by the timeout — the server gave no answer) and the existing `ApiError`
+  (the server answered, just with an error). A favourite toggle's `useToggleFavourite` treats the
+  two completely differently: a `NetworkError` on the initial call is **not** a mutation error at
+  all — it queues the command (same UUID the call was about to use) in a `localStorage` outbox
+  (`lib/outbox.ts`, versioned key including the user id, in-memory fallback if storage throws,
+  capped at 100 entries, 24h expiry) and the optimistic heart just stays as it is; an `ApiError`
+  keeps the existing rollback behaviour unchanged. `lib/outbox-flush.ts` drains the outbox
+  sequentially (oldest first, one at a time, reusing the same UUIDs), single-flight, on four
+  triggers (app load, the `online` event, the tab becoming visible, and its own retry timer —
+  2s → 30s backoff, doubling on a kept entry, reset on a sent one) wired up in a new
+  `OfflineIndicator` header component. Per-result handling: a successful resend removes the entry
+  and hands off to `pollUntilSettled` unconditionally (reused, not copied — a command the server
+  already knew about just settles on its first check); `NetworkError` stops the flush and keeps
+  everything; 429 keeps the entry and waits for `Retry-After` (falling back to the normal backoff
+  if absent); a 5xx (or anything else unlisted) keeps it and backs off; 400/404/409 drop the entry,
+  clear its pending overlay, refetch favourites and show one friendly message. `pollUntilSettled`
+  itself was changed so a `NetworkError` while checking status is treated as "not settled yet"
+  rather than a failure — shared by the interactive toggle too, not outbox-specific.
+- **Two real bugs found and fixed:**
+  1. `getRequestTimeoutMs()`'s first version did `Number(raw)` with no finiteness check — a
+     non-numeric `NEXT_PUBLIC_REQUEST_TIMEOUT_MS` produced `NaN`, and `AbortSignal.timeout(NaN)`
+     throws **synchronously**, outside `apiFetch`'s own try/catch, crashing every request instead
+     of falling back to the default. Fixed with a `Number.isFinite` check; caught by a unit test,
+     not manually.
+  2. Found only by the manual Playwright check below, invisible to every jsdom-based unit/RTL
+     test: TanStack Query's default mutation `networkMode` (`'online'`) **pauses a mutation
+     entirely** while the browser reports itself offline — `mutationFn` never even runs until an
+     `online` event fires. That makes this feature's own `NetworkError` handling unreachable for
+     exactly the case it exists for (jsdom's `navigator.onLine` is always `true`, which is why no
+     unit test caught it). Fixed with `networkMode: 'always'` on this one mutation only — it
+     relies on its own detection instead of the library's, and nothing else (`useRefreshChannel`
+     included) was touched.
+- **Files:** `frontend/lib/api.ts` (timeout, `NetworkError`), `frontend/lib/outbox.ts` (+ `.spec`),
+  `frontend/lib/outbox-flush.ts` (+ `.spec`), `frontend/lib/poll-command.ts` (NetworkError-while-
+  polling), `frontend/store/outbox-store.ts`, `frontend/hooks/useToggleFavourite.ts` (updated),
+  `frontend/components/OfflineIndicator.tsx` (new) + `SiteHeader.tsx` (updated).
+- **Done when:** a toggle that hits a NetworkError queues with the same UUID and doesn't roll
+  back; an HTTP error still rolls back and queues nothing; the outbox flushes sequentially with
+  the same UUIDs on `online`/visibility/load/timer; a never-succeed status drops the entry; the
+  outbox survives a reload and a broken `localStorage`.
+- **Tests:** unit — timeout/NetworkError in `api.test.ts` (plus the invalid-timeout regression);
+  outbox persistence, the 100-cap, the 24h expiry, and the memory fallback (`outbox.test.ts`);
+  `outbox-flush.ts`'s sequential sending, single-flight, backoff doubling/reset, each per-result
+  outcome (202/NetworkError/429/5xx/400/404/409), the replayed-command case, and the poll-timeout
+  case (`outbox-flush.test.ts`); `pollUntilSettled`'s NetworkError-is-not-settled-yet behaviour
+  (`poll-command.test.ts`). RTL — a NetworkError queuing with the sent UUID and no rollback, an
+  HTTP 500 rolling back with nothing queued (`FavouriteButton.test.tsx`); the `online` event
+  flushing two queued entries in order with their original UUIDs (`OfflineIndicator.test.tsx`).
+  Manual — a short Playwright script (run from the scratchpad, not a project dependency) against
+  the real running stack: offline add-then-remove of the same channel stays queued and ordered,
+  the indicator appears/clears, reconnecting settles it and the result survives a reload.
 - **Commit:** `feat(frontend): add offline command outbox and request timeout`
 - **Time:** ~2.5 hrs.
 

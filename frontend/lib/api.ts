@@ -101,6 +101,17 @@ export class ApiError extends Error {
   }
 }
 
+/** The server gave no answer at all — `fetch` itself rejected (offline, DNS,
+ * connection refused) or the request was aborted by the timeout below. This
+ * is distinct from ApiError (the server answered, just with an error): a
+ * NetworkError is the signal the offline outbox queues on, never ApiError. */
+export class NetworkError extends Error {
+  constructor(message = 'Network request failed') {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
 /** The backend sends `message` as a string for most errors, but as an array
  * of strings for ValidationPipe failures — both are handled here. */
 function extractErrorMessage(body: unknown): string {
@@ -124,15 +135,50 @@ function getBaseUrl(): string {
   return baseUrl;
 }
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
+
+function getRequestTimeoutMs(): number {
+  const raw = process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  // AbortSignal.timeout() throws synchronously on a non-finite value, which
+  // would otherwise crash every request instead of just falling back.
+  return Number.isFinite(parsed) ? parsed : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
+/** AbortSignal.timeout isn't available in every environment this could run
+ * in, so this falls back to a plain AbortController + setTimeout. `cancel()`
+ * clears that fallback timer once the request settles either way — without
+ * it, a request that finishes well under the timeout would still leave a
+ * dangling timer running until it fires. */
+function createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return { signal: AbortSignal.timeout(timeoutMs), cancel: () => {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, cancel: () => clearTimeout(timer) };
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${getBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-User-Id': useUiStore.getState().userId,
-      ...init?.headers,
-    },
-  });
+  const { signal, cancel } = createTimeoutSignal(getRequestTimeoutMs());
+  let response: Response;
+  try {
+    response = await fetch(`${getBaseUrl()}${path}`, {
+      ...init,
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': useUiStore.getState().userId,
+        ...init?.headers,
+      },
+    });
+  } catch (err) {
+    // A rejected fetch — offline, DNS failure, connection refused, or the
+    // timeout above aborting the request — means the server never answered.
+    throw new NetworkError(err instanceof Error ? err.message : undefined);
+  } finally {
+    cancel();
+  }
 
   if (!response.ok) {
     if (response.status === 429) {

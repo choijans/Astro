@@ -1,4 +1,4 @@
-import { ApiError, getChannels } from '../lib/api';
+import { ApiError, getChannels, NetworkError } from '../lib/api';
 
 function mockFetchOnce(status: number, body: unknown) {
   global.fetch = jest.fn().mockResolvedValue({
@@ -93,5 +93,51 @@ describe('API error handling', () => {
 
     const [, init] = (global.fetch as jest.Mock).mock.calls[0];
     expect(init.headers['X-User-Id']).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+});
+
+describe('NetworkError handling (the server gave no answer at all)', () => {
+  const originalTimeout = process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS;
+
+  afterEach(() => {
+    if (originalTimeout === undefined) {
+      delete process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS;
+    } else {
+      process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS = originalTimeout;
+    }
+  });
+
+  it('a rejected fetch (offline, DNS failure, connection refused) becomes a NetworkError', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch')) as jest.Mock;
+
+    await expect(getChannels({})).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('a request that outlives NEXT_PUBLIC_REQUEST_TIMEOUT_MS is aborted and becomes a NetworkError', async () => {
+    process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS = '30';
+    global.fetch = jest.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('The operation was aborted.', 'AbortError')),
+          );
+        }),
+    ) as unknown as jest.Mock;
+
+    await expect(getChannels({})).rejects.toBeInstanceOf(NetworkError);
+  });
+
+  it('an ApiError (the server did answer, just with an error) is never a NetworkError', async () => {
+    mockFetchOnce(500, { statusCode: 500, message: 'Internal server error' });
+
+    await expect(getChannels({})).rejects.toBeInstanceOf(ApiError);
+    await expect(getChannels({})).rejects.not.toBeInstanceOf(NetworkError);
+  });
+
+  it('an invalid NEXT_PUBLIC_REQUEST_TIMEOUT_MS falls back to the default instead of crashing every request', async () => {
+    process.env.NEXT_PUBLIC_REQUEST_TIMEOUT_MS = 'not-a-number';
+    mockFetchOnce(200, { data: [], page: 1, limit: 24, total: 0, hasNextPage: false });
+
+    await expect(getChannels({})).resolves.toBeDefined();
   });
 });
