@@ -6,7 +6,8 @@ favourites, and process queued commands (add/remove favourite, refresh channel).
 Status: backend and frontend are implemented through rate limiting, health checks, Redis caching
 and the offline command outbox (see `docs/plan.md` for the full task list and what's left). See
 `docs/prd.md` for the product requirements, `docs/architecture/architecture.md` for the
-architecture diagram, and `RELEASE_NOTES.md` for what shipped.
+architecture diagram, `docs/TESTING.md` for the full testing breakdown, and `RELEASE_NOTES.md` for
+what shipped.
 
 ## Setup (backend, so far)
 
@@ -74,6 +75,13 @@ The Refresh button on a channel's details page queues a `REFRESH_CHANNEL` comman
 fetches Astro's current channel list and updates that one channel's row (schedule and the other
 mapped fields). **The worker must be running** for a refresh to ever complete — same as favourites,
 it's processed asynchronously, not inline in the API request.
+
+**It isn't instant.** The button shows "Refreshing…" while `POST /commands` returns 202 and the
+frontend polls `GET /commands/:id` every ~500ms for the worker to mark it DONE — usually under a
+couple of seconds, longer the first time in a while if it has to fetch Astro live rather than reuse
+the 60-second cached list below. If polling runs a full ~15s without a DONE, the button gives up
+and shows "Still refreshing…" instead of hanging forever; the command itself isn't dead; it's still
+running server-side and will finish, the UI just stopped waiting for it.
 
 Several refreshes arriving close together share one Astro call instead of each making their own:
 the worker keeps an in-memory copy of the last successful list for about 60 seconds
@@ -211,12 +219,6 @@ queued this way.
 Backend unit + e2e + frontend unit is what CI would run; `test:outage` is run manually since it
 briefly stops a shared container (see "Outage test" above for why).
 
-## How I built this
-
-Built task by task against `docs/plan.md`, one task per branch, tests written alongside the code
-for that task rather than after it. Each task stopped at its own "done when" check (lint, unit
-tests, e2e, build) before the next one started, so the history in `git log` is one feature commit
-(plus a merge commit) per task rather than one large commit at the end. `docs/prd.md` was the
-source of truth throughout; where it didn't specify something (e.g. the rate-limit tracking key,
-how to shape the worker's Astro-list cache), the decision and its trade-off are documented inline
-in the relevant README section or in code comments, not left implicit.
+See `docs/TESTING.md` for a full file-by-file breakdown of what each suite covers, plus the two
+manual verification procedures (a curl demo of Redis caching, and a Playwright script for the
+offline outbox) that aren't automated tests.
