@@ -3,9 +3,10 @@
 Full Stack Engineering Technical Assessment — browse Astro channels, view details, manage
 favourites, and process queued commands (add/remove favourite, refresh channel).
 
-Status: backend and frontend are implemented through rate limiting and health checks (see
-`docs/plan.md` for the full task list and what's left). See `docs/prd.md` for the product
-requirements.
+Status: backend and frontend are implemented through rate limiting, health checks, Redis caching
+and the offline command outbox (see `docs/plan.md` for the full task list and what's left). See
+`docs/prd.md` for the product requirements, `docs/architecture/architecture.md` for the
+architecture diagram, and `RELEASE_NOTES.md` for what shipped.
 
 ## Setup (backend, so far)
 

@@ -8,7 +8,7 @@ maintained by the user; this plan doesn't edit it). Work one task at a time; sto
 workflow) and 17 (range filter) are cuttable extras — cut in this order if time is short:
 **1) CI workflow (Task 15) → 2) caching (Task 13) → 3) range filter (Task 17)**.
 
-## 1. Repo bootstrap — NEXT
+## 1. Repo bootstrap — DONE
 
 - **Goal:** git repo with base layout; `.gitignore` and `.env.example` (placeholders only, no
   real secrets) covering backend (`DATABASE_URL`, `REDIS_URL`, ports) and frontend
@@ -590,20 +590,34 @@ ever calling our processor again.
 - **Commit:** `ci: add github actions workflow`
 - **Time:** ~1.5 hrs. **Cuttable — cut 1st if short on time.**
 
-## 16. README, architecture diagram, release notes
+## 16. README, architecture diagram, release notes — DONE
 
-- **Goal:** finish `README.md` (setup/run/test/design decisions/assumptions/scope cuts,
-  fresh-clone verified) on top of the Task 1 stub; a real architecture diagram in
-  `docs/architecture` (Frontend/Backend/DB/Queue/Astro); `RELEASE_NOTES.md`. README must
-  explicitly list what was **not attempted** — end-to-end tests, AWS/serverless — not just what
-  shipped.
-- **Files:** `README.md`, `docs/architecture/*`, `RELEASE_NOTES.md`
+- **Goal:** finish `README.md` (setup/run/test/design decisions/assumptions/scope cuts) on top of
+  the Task 1 stub; a real architecture diagram in `docs/architecture` (Frontend/Backend/DB/Queue/
+  Astro); `RELEASE_NOTES.md`. README must explicitly list what was **not attempted** — end-to-end
+  tests, AWS/serverless — not just what shipped.
+- **What shipped:** `README.md` gained a unified "Testing" section (all four test commands across
+  both apps in one table), a "Calling the API — the `X-User-Id` header" section (the header is
+  mandatory on every write route and wasn't documented as a general prerequisite before), a
+  "Working offline" section for the Task 11 outbox, the stale "scaffolding in progress" status line
+  replaced with an accurate one, and a filled-in "How I built this" (was an empty placeholder
+  section). `docs/architecture/architecture.md` + `architecture.svg`: a hand-authored diagram with
+  exactly the five PRD-named parts (Frontend, Backend, Database, Queue layer, Astro API), plus a
+  components table and three GitHub-rendered Mermaid diagrams (system overview, a favourite command
+  end-to-end, and the 5-second outage recovery) with a short rationale under each. `RELEASE_NOTES.md`:
+  what shipped per area, a bonus-requirements table, verified test counts/lint warnings/outage
+  timing (checked against fresh runs, not estimated), the stack/version table (checked against
+  `package.json`/`.nvmrc`/`docker-compose.yml`), known limitations (including a verified `npm audit`
+  finding on `multer`, unreachable since there are no upload endpoints), and an explicit
+  "Not attempted" list (AWS, browser-driven e2e, auth, the range filter, CI/CD, a few UI nice-to-haves).
+- **Files:** `README.md`, `docs/architecture/architecture.md`, `docs/architecture/architecture.svg`,
+  `RELEASE_NOTES.md`.
 - **Done when:** a reviewer following only `README.md` from a fresh clone (`git clone` →
   `docker compose up` → two `npm run dev`) sees the app working end-to-end; the README's
-  "not attempted" section names end-to-end tests and AWS explicitly.
-- **Tests:** manual fresh-clone run-through.
+  "not attempted" equivalent (`RELEASE_NOTES.md`) names end-to-end tests and AWS explicitly. Met.
+- **Tests:** manual fresh-clone run-through; every number quoted in `RELEASE_NOTES.md` was checked
+  against a fresh `npm test`/`npm run lint`/`npm run test:outage` run rather than carried over stale.
 - **Commit:** `docs: add README, architecture diagram and release notes`
-- **Time:** ~3 hrs.
 
 ## 17. (Optional) Channel range filter — rangeKey — cuttable (3rd to cut)
 
