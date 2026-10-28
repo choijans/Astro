@@ -120,6 +120,33 @@ one budget.
 which one isn't otherwise. The response never includes the underlying error, a hostname or a
 connection string — only ever "up" or "down" per check; the real failure is logged instead.
 
+## Caching
+
+`GET /channels` and `GET /channels/:id` are cached in Redis, cache-aside, on a separate ioredis
+connection from BullMQ's (own socket, `cache:` key prefix, same `REDIS_URL`/`REDIS_DB`). Neither
+response contains per-user data — no favourite flag, no user id — so both are safe to share across
+every caller. A response carries `X-Cache: HIT` or `MISS`; the header is omitted entirely when
+caching is disabled.
+
+- **List** (`GET /channels`): keyed from the filters/sort/page/limit actually applied (defaults
+  included, in a fixed order — the same query with its parameters in a different order hits the
+  same entry), TTL `CACHE_LIST_TTL_SECONDS` (default 30s). List items carry `now`/`next`, computed
+  at request time — **a cached list can show a show that already ended, by up to the TTL**. This
+  is accepted staleness, not a bug.
+- **Detail** (`GET /channels/:id`): keyed per channel id, TTL `CACHE_DETAIL_TTL_SECONDS` (default
+  60s). Invalidated immediately — the specific channel's key is deleted — the moment a
+  `REFRESH_CHANNEL` command actually writes a new schedule for it. `npm run sync` does **not**
+  invalidate anything; a channel updated that way stays cached until its TTL expires. This is
+  accepted staleness too: `sync` is a bulk, infrequent operation, and precise invalidation across
+  every list-cache key a channel might appear in isn't realistic (the list cache expires by TTL
+  instead, which is why its own TTL is comparatively short).
+- **Fail open**: a down, slow or erroring cache never fails or hangs a request — it's treated as a
+  miss, logged as a warning, and the response comes from the database instead. Every cache command
+  has its own 300ms timeout, and the connection is configured not to queue commands while
+  disconnected, so a cache outage can only ever cost up to that 300ms, never longer.
+- **Env vars**: `CACHE_ENABLED` (default `true`), `CACHE_LIST_TTL_SECONDS` (default 30),
+  `CACHE_DETAIL_TTL_SECONDS` (default 60).
+
 ## Running the frontend
 
 1. Copy the frontend values from `.env.example` into `frontend/.env.local` (just
@@ -154,7 +181,7 @@ connection string — only ever "up" or "down" per check; the real failure is lo
 | Command | Where | What it checks |
 | --- | --- | --- |
 | `cd backend && npm test` | backend | Unit tests (services, guards, handlers, mappers) |
-| `cd backend && npm run test:e2e` | backend | Supertest against a real Postgres/Redis test instance — channels, favourites, commands, rate limiting, health |
+| `cd backend && npm run test:e2e` | backend | Supertest against a real Postgres/Redis test instance — channels, favourites, commands, rate limiting, health, caching |
 | `cd backend && npm run test:outage` | backend | Scripted outage acceptance test (see "Outage test" above) — separate because it stops the real, shared Redis container |
 | `cd frontend && npm test` | frontend | RTL/Jest component and hook tests |
 
