@@ -1,4 +1,4 @@
-import { CommandResponse, getCommand } from './api';
+import { CommandResponse, getCommand, NetworkError } from './api';
 
 export const POLL_INTERVAL_MS = 500;
 export const POLL_TIMEOUT_MS = 15000;
@@ -21,9 +21,18 @@ function sleep(ms: number): Promise<void> {
 export async function pollUntilSettled(commandId: string): Promise<CommandResponse> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   for (;;) {
-    const command = await getCommand(commandId);
-    if (command.status === 'DONE' || command.status === 'FAILED') {
-      return command;
+    try {
+      const command = await getCommand(commandId);
+      if (command.status === 'DONE' || command.status === 'FAILED') {
+        return command;
+      }
+    } catch (err) {
+      // A network error while checking status isn't a failure — the command
+      // itself is unaffected, we just couldn't ask about it this time. A
+      // real ApiError (the server answered, e.g. with a 404) still propagates.
+      if (!(err instanceof NetworkError)) {
+        throw err;
+      }
     }
     if (Date.now() > deadline) {
       throw new PollTimeoutError();

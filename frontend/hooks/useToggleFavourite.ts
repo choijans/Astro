@@ -1,12 +1,25 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { addFavourite, ChannelListItem, removeFavourite } from '../lib/api';
+import { addFavourite, ChannelListItem, CommandResponse, NetworkError, removeFavourite } from '../lib/api';
 import { PollTimeoutError, pollUntilSettled } from '../lib/poll-command';
+import { useOutboxStore } from '../store/outbox-store';
 import { usePendingFavouritesStore } from '../store/pending-favourites-store';
 import { useUiStore } from '../store/ui-store';
 
 export type FavouriteAction = 'add' | 'remove';
+
+/** The toggle request never reached the server — it's queued in the offline
+ * outbox instead of being treated as a mutation error: no rollback, no error
+ * message, the optimistic heart and the pending overlay stay exactly as they
+ * are until the outbox flush later resolves the real outcome. */
+interface Queued {
+  queued: true;
+}
+
+function isQueued(result: CommandResponse | Queued): result is Queued {
+  return 'queued' in result;
+}
 
 function placeholderFavourite(id: number, title: string): ChannelListItem {
   return {
@@ -51,10 +64,33 @@ export function useToggleFavourite(channelId: number, channelTitle: string) {
   const clearPending = usePendingFavouritesStore((s) => s.clearPending);
 
   return useMutation({
-    mutationFn: async (action: FavouriteAction) => {
+    // TanStack Query's default networkMode ('online') pauses a mutation
+    // entirely while the browser reports itself offline — mutationFn never
+    // even runs until an 'online' event fires, which would make the
+    // NetworkError handling below unreachable for exactly the case it exists
+    // for. 'always' makes this mutation run unconditionally and rely on its
+    // own NetworkError detection instead of the library's.
+    networkMode: 'always',
+    mutationFn: async (action: FavouriteAction): Promise<CommandResponse | Queued> => {
       const commandId = crypto.randomUUID();
-      const command =
-        action === 'add' ? await addFavourite(channelId, commandId) : await removeFavourite(channelId, commandId);
+      let command: CommandResponse;
+      try {
+        command =
+          action === 'add'
+            ? await addFavourite(channelId, commandId)
+            : await removeFavourite(channelId, commandId);
+      } catch (err) {
+        if (err instanceof NetworkError) {
+          useOutboxStore.getState().enqueue(userId, {
+            id: commandId,
+            type: action === 'add' ? 'ADD_FAVORITE' : 'REMOVE_FAVORITE',
+            channelId,
+            createdAt: Date.now(),
+          });
+          return { queued: true };
+        }
+        throw err;
+      }
 
       if (command.status === 'DONE') {
         return command;
@@ -116,7 +152,11 @@ export function useToggleFavourite(channelId: number, channelTitle: string) {
       }
     },
 
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (isQueued(result)) {
+        // Stays pending — the outbox flush clears it once the resend settles.
+        return;
+      }
       clearPending(channelId);
       queryClient.invalidateQueries({ queryKey });
     },

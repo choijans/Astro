@@ -1,4 +1,4 @@
-import { CommandResponse, getCommand } from '../lib/api';
+import { ApiError, CommandResponse, getCommand, NetworkError } from '../lib/api';
 import { PollTimeoutError, pollUntilSettled, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from '../lib/poll-command';
 
 jest.mock('../lib/api', () => ({
@@ -79,5 +79,28 @@ describe('pollUntilSettled', () => {
     await jest.advanceTimersByTimeAsync(POLL_TIMEOUT_MS + POLL_INTERVAL_MS * 2);
 
     await assertion;
+  });
+
+  it('treats a NetworkError as "not settled yet" and keeps polling instead of throwing', async () => {
+    (getCommand as jest.Mock)
+      .mockRejectedValueOnce(new NetworkError('offline'))
+      .mockResolvedValueOnce(makeCommand({ status: 'DONE' }));
+
+    const resultPromise = pollUntilSettled('cmd-1');
+
+    await jest.advanceTimersByTimeAsync(0);
+    expect(getCommand).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(getCommand).toHaveBeenCalledTimes(2);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'DONE' });
+  });
+
+  it('still throws immediately on a real ApiError (the server answered, e.g. the command vanished)', async () => {
+    (getCommand as jest.Mock).mockRejectedValue(new ApiError('Command not found', 404));
+
+    await expect(pollUntilSettled('cmd-1')).rejects.toBeInstanceOf(ApiError);
+    expect(getCommand).toHaveBeenCalledTimes(1);
   });
 });

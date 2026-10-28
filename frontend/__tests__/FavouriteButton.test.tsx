@@ -1,9 +1,20 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FavouriteButton } from '../components/FavouriteButton';
-import { addFavourite, ApiError, ChannelListItem, CommandResponse, getFavourites, removeFavourite } from '../lib/api';
+import {
+  addFavourite,
+  ApiError,
+  ChannelListItem,
+  CommandResponse,
+  getFavourites,
+  NetworkError,
+  removeFavourite,
+} from '../lib/api';
+import { getOutbox } from '../lib/outbox';
 import { PollTimeoutError, pollUntilSettled } from '../lib/poll-command';
+import { useOutboxStore } from '../store/outbox-store';
 import { usePendingFavouritesStore } from '../store/pending-favourites-store';
+import { useUiStore } from '../store/ui-store';
 import { renderWithQueryClient } from '../testing/test-utils';
 
 jest.mock('../lib/api', () => ({
@@ -70,6 +81,8 @@ beforeEach(() => {
   favouritesState = [];
   (getFavourites as jest.Mock).mockImplementation(() => Promise.resolve(favouritesState));
   usePendingFavouritesStore.setState({ pending: {} });
+  window.localStorage.clear();
+  useOutboxStore.setState({ entries: [], justSynced: false, dropNotice: null });
 });
 
 describe('FavouriteButton', () => {
@@ -140,6 +153,26 @@ describe('FavouriteButton', () => {
     const status = screen.getByRole('status');
     expect(status).toHaveTextContent('The request failed. Please try again.');
     expect(status).not.toHaveTextContent('Internal server error');
+    expect(getOutbox(useUiStore.getState().userId)).toEqual([]);
+  });
+
+  it('a NetworkError does not roll back: it queues the command (same UUID) in the outbox and keeps the heart flipped, with no error message', async () => {
+    (addFavourite as jest.Mock).mockRejectedValue(new NetworkError('offline'));
+    const user = userEvent.setup();
+    renderWithQueryClient(<FavouriteButton channelId={1} channelTitle="Astro30" />);
+
+    await user.click(await screen.findByRole('button', { name: 'Add Astro30 to favourites' }));
+
+    expect(
+      await screen.findByRole('button', { name: 'Remove Astro30 from favourites' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    const [, sentCommandId] = (addFavourite as jest.Mock).mock.calls[0];
+    const outbox = getOutbox(useUiStore.getState().userId);
+    expect(outbox).toEqual([
+      { id: sentCommandId, type: 'ADD_FAVORITE', channelId: 1, createdAt: expect.any(Number) },
+    ]);
   });
 
   it('rolls back and shows the rate-limit message when the toggle is rejected with a 429', async () => {
