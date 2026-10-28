@@ -111,6 +111,17 @@ worker, a manual test). It still uses the dedicated test queue name and Redis da
 refuses to run against the dev ones (same guard as `test:e2e`) — the outage itself is at the
 container level, so it affects dev and test connections alike while it's down.
 
+While Redis is stopped, the console prints a burst of `ECONNREFUSED` errors and `"Worker
+connection error"` lines — that's BullMQ's and ioredis's own reconnect attempts failing as
+expected during the outage, not a test failure; the test's assertions are what actually decide
+pass/fail, not the console output.
+
+The script runs with Jest's `--forceExit`: after a real 5-second Redis stop/restart, something in
+the ioredis/BullMQ reconnection machinery was still settling when the test finished, which kept
+the process alive past Jest's own exit check even though every connection and timer this test
+owns is explicitly closed in its `afterAll`/`finally` blocks. `--forceExit` only affects this one
+script — `test`/`test:e2e` don't use it, since they don't trigger a real outage.
+
 ## Rate limiting and health
 
 `POST /commands`, `POST /favourites` and `DELETE /favourites/:channelId` are rate limited — 60

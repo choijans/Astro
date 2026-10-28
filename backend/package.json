@@ -25,7 +25,7 @@
     "pretest:e2e": "npm run build && node dist/src/scripts/prepare-test-db.js",
     "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-e2e.json",
     "pretest:outage": "npm run build && node dist/src/scripts/prepare-test-db.js",
-    "test:outage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-outage.json",
+    "test:outage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-outage.json --forceExit",
     "seed": "npm run build && node dist/prisma/seed.js",
     "sync": "npm run build && node dist/src/sync/run-sync.js"
   },

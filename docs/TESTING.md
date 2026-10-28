@@ -70,6 +70,11 @@ every command ends DONE, no duplicate favourites exist, the final state of each 
 matches its last command, and the queue holds no duplicate jobs. See `README.md`'s "Outage test"
 section for why this is separate from `test:e2e`.
 
+The console output while this runs includes a burst of `ECONNREFUSED` errors and `"Worker
+connection error"` lines during the Redis stop — expected, it's the reconnect attempts failing on
+schedule, not a sign the test is broken. The script also runs with `--forceExit` (see the README
+section above for why).
+
 ## Frontend tests (`frontend/__tests__/*`, `npm test`)
 
 `fetch` is mocked throughout — no real backend needed.
