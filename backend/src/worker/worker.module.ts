@@ -6,6 +6,7 @@ import { CommandsRepository } from '../commands/commands.repository';
 import { AddFavouriteHandler } from '../commands/handlers/add-favourite.handler';
 import { RefreshChannelHandler } from '../commands/handlers/refresh-channel.handler';
 import { RemoveFavouriteHandler } from '../commands/handlers/remove-favourite.handler';
+import { CacheModule } from '../common/cache/cache.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { QueueModule } from '../queue/queue.module';
 import { CommandWorkerService } from './command-worker.service';
@@ -15,9 +16,10 @@ import { WorkerSweepScheduler } from './worker-sweep-scheduler.service';
 // start" (via RecoverySweepService's own OnModuleInit, shared with the API)
 // and the Queue connection WorkerSweepScheduler needs to re-add jobs and
 // watch for reconnects. AstroModule is only needed here: the API process
-// never talks to Astro.
+// never talks to Astro. CacheModule is what lets RefreshChannelHandler
+// invalidate a channel's cached detail response after writing it.
 @Module({
-  imports: [PrismaModule, QueueModule, AstroModule],
+  imports: [PrismaModule, QueueModule, AstroModule, CacheModule],
   providers: [
     CommandsRepository,
     AddFavouriteHandler,

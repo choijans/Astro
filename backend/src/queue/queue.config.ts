@@ -79,7 +79,9 @@ export function getSweepIntervalMs(): number {
   return raw ? Number(raw) : DEFAULT_SWEEP_INTERVAL_MS;
 }
 
-function getRedisUrl(): string {
+// Exported so cache.config.ts can build its own, separate ioredis connection
+// options against the same REDIS_URL/db without duplicating the parsing.
+export function getRedisUrl(): string {
   const url = process.env.REDIS_URL;
   if (!url) {
     throw new Error('REDIS_URL is not set');
@@ -87,7 +89,7 @@ function getRedisUrl(): string {
   return url;
 }
 
-function parseRedisUrl(
+export function parseRedisUrl(
   url: string,
 ): Pick<RedisOptions, 'host' | 'port' | 'username' | 'password'> {
   const parsed = new URL(url);

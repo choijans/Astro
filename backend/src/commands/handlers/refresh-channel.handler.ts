@@ -4,13 +4,18 @@ import type { Command, Prisma } from '../../../generated/prisma/client';
 import { CommandType } from '../../../generated/prisma/client';
 import { CachedAstroClient } from '../../astro/cached-astro-client';
 import { mapAstroChannel } from '../../astro/astro.mapper';
+import { buildChannelDetailCacheKey } from '../../channels/channels-cache-key';
+import { CacheService } from '../../common/cache/cache.service';
 import { ICommandHandler } from '../command-handler.interface';
 
 @Injectable()
 export class RefreshChannelHandler implements ICommandHandler {
   readonly type = CommandType.REFRESH_CHANNEL;
 
-  constructor(private readonly cachedAstroClient: CachedAstroClient) {}
+  constructor(
+    private readonly cachedAstroClient: CachedAstroClient,
+    private readonly cache: CacheService,
+  ) {}
 
   /**
    * Updates only `command.channelId`'s row — never any other channel's, and
@@ -45,7 +50,7 @@ export class RefreshChannelHandler implements ICommandHandler {
     }
 
     const mapped = mapAstroChannel(record, fetchedAt);
-    await tx.channel.updateMany({
+    const { count } = await tx.channel.updateMany({
       where: { id: command.channelId, scheduleUpdatedAt: { lt: fetchedAt } },
       data: {
         title: mapped.title,
@@ -62,5 +67,11 @@ export class RefreshChannelHandler implements ICommandHandler {
         // createdAt is intentionally omitted, same as SyncService.upsertAll.
       },
     });
+
+    // Only when a row was actually written — a no-op (an already-newer
+    // snapshot already applied) leaves the cached detail correctly in place.
+    if (count > 0) {
+      await this.cache.del(buildChannelDetailCacheKey(command.channelId));
+    }
   }
 }

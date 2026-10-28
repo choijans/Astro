@@ -479,16 +479,55 @@ ever calling our processor again.
   `feat(frontend): show a message when rate limited` (frontend, separate commit)
 - **Time:** ~3 hrs.
 
-## 13. Redis response caching — cuttable (2nd to cut)
+## 13. Redis response caching
 
-- **Goal:** cache-aside for `GET /channels` (30-60s TTL — list cache keys are combinatorial and
-  can't be precisely invalidated) and `GET /channels/:id` (exact-key invalidation on refresh).
-- **Files:** `backend/src/common/cache/*`
-- **Done when:** repeated `GET /channels` is served from cache within the TTL window; a
-  refreshed channel's detail cache is invalidated immediately.
-- **Tests:** unit test for cache-aside/TTL logic and detail-cache invalidation on refresh.
+- **Goal:** cache-aside for `GET /channels` and `GET /channels/:id` only — neither response
+  carries per-user data, so both are safe to share across every caller. `CacheService` sits on its
+  own ioredis connection, separate from BullMQ's (own socket, `cache:` key prefix, same
+  `REDIS_URL`/`REDIS_DB` from env — not a separate database). List keys are built from the
+  validated DTO's own fields in a fixed order (defaults already applied by `ValidationPipe`), so
+  the same filters in a different query-string order hit the same entry
+  (`CACHE_LIST_TTL_SECONDS`, default 30); detail keys are per channel id
+  (`CACHE_DETAIL_TTL_SECONDS`, default 60). List items carry `now`/`next` computed at request
+  time, so a cached list can show a show that already ended, by up to the TTL — accepted
+  staleness, documented in the README, not a bug. Detail invalidation is exact: `RefreshChannelHandler`
+  deletes the one channel's detail key, but only once its `updateMany` actually affects a row (a
+  no-op — an already-fresher snapshot already applied — correctly leaves the cached detail alone).
+  `npm run sync` does not invalidate anything; also accepted and documented. Fail open throughout:
+  every `CacheService` method (`get`/`set`/`del`) swallows a Redis error and logs a warning instead
+  of throwing, and the connection itself is configured so a cache command can never hang a request
+  — `commandTimeout: 300` (ioredis's own per-command timeout) covers a slow/stuck connection, and
+  `enableOfflineQueue: false` + `maxRetriesPerRequest: 1` stop ioredis from doing what it does by
+  default while disconnected (queue commands in memory and wait indefinitely for a reconnect) —
+  without these, a down cache could still hang a request even with `commandTimeout` set, since a
+  queued command is never actually sent for that timeout to apply to. `CACHE_ENABLED` (default
+  true) gates everything; a cached route sets `X-Cache: HIT`/`MISS`, omitted entirely when
+  disabled. A cache hit's body is byte-identical to a miss's: `CacheService` stores
+  `JSON.stringify`'d values and returns `JSON.parse`'d plain objects on a hit, so Nest's own
+  `res.json()` serializes both paths through the same Date-to-ISO-string conversion.
+- **Files:** `backend/src/common/cache/*` (`cache.config.ts`, `cache.tokens.ts`, `cache.service.ts`
+  + `.spec.ts`, `cache.module.ts`), `backend/src/channels/channels-cache-key.ts` (+ `.spec.ts`),
+  `backend/src/channels/channels.controller.ts` / `channels.module.ts` (updated),
+  `backend/src/commands/handlers/refresh-channel.handler.ts` (updated — cache invalidation) +
+  `.spec.ts` (updated), `backend/src/worker/worker.module.ts` (updated — imports `CacheModule`),
+  `backend/src/queue/queue.config.ts` (updated — `getRedisUrl`/`parseRedisUrl` exported for reuse).
+- **Done when:** repeated `GET /channels`/`GET /channels/:id` are served from cache within the TTL
+  window with an identical body and `X-Cache: HIT`; a refreshed channel's detail cache is
+  invalidated immediately; a cache failure never fails or hangs a request.
+- **Tests:** unit — key normalisation (same filters in a different order match, different filters
+  don't); `CacheService` get/set/del, `wrap`'s hit/miss/disabled/business-error paths, and fail-open
+  on both a generic error and a command-timeout error; `RefreshChannelHandler` deletes the detail
+  key only when a row was actually written. E2E (real test Redis, `CACHE_ENABLED` flipped to `true`
+  for the file and restored after, since env vars are process-global across the single-worker e2e
+  run) — list MISS then HIT with an equal body; a different query is its own MISS; the same filters
+  in a different parameter order still hit; detail MISS then HIT; a 404 sets no header;
+  `CACHE_ENABLED=false` sets no header; a cache backend that errors on every call still returns 200
+  from the database (`overrideProvider(CACHE_REDIS_CLIENT)`); detail HIT → `REFRESH_CHANNEL`
+  completes → next GET is a MISS showing the new data → the one after that is a HIT again (the
+  mutated row is restored in `afterAll` so later e2e files, which share the same suite-wide seeded
+  fixture data, aren't affected).
 - **Commit:** `feat(backend): add Redis response caching`
-- **Time:** ~2 hrs. **Cuttable — cut 2nd if short on time.**
+- **Time:** ~2 hrs.
 
 ## 14. Close test gaps
 

@@ -5,6 +5,7 @@ import type {
   CachedAstroClient,
 } from '../../astro/cached-astro-client';
 import type { AstroChannelRecord } from '../../astro/astro.types';
+import type { CacheService } from '../../common/cache/cache.service';
 import { RefreshChannelHandler } from './refresh-channel.handler';
 
 function makeRecord(
@@ -68,6 +69,12 @@ function makeCachedAstroClient(snapshot: AstroListSnapshot): CachedAstroClient {
   } as unknown as CachedAstroClient;
 }
 
+function makeCache(): CacheService {
+  return {
+    del: jest.fn().mockResolvedValue(undefined),
+  } as unknown as CacheService;
+}
+
 describe('RefreshChannelHandler', () => {
   it("updates only the command's channel row, using the mapper's output", async () => {
     const fetchedAt = new Date('2026-01-01T12:00:00Z');
@@ -76,7 +83,7 @@ describe('RefreshChannelHandler', () => {
       records: [record],
       fetchedAt,
     });
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock();
 
     await handler.handle(makeCommand({ channelId: 42 }), tx);
@@ -101,7 +108,7 @@ describe('RefreshChannelHandler', () => {
       records: [record],
       fetchedAt,
     });
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock();
 
     await handler.handle(makeCommand({ channelId: 42 }), tx);
@@ -116,7 +123,7 @@ describe('RefreshChannelHandler', () => {
       records: [makeRecord({ id: 42 })],
       fetchedAt,
     });
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock(1); // simulates one row matching the `lt` condition
 
     await expect(
@@ -136,7 +143,7 @@ describe('RefreshChannelHandler', () => {
       records: [makeRecord({ id: 42 })],
       fetchedAt,
     });
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock(0); // simulates no row matching the `lt` condition
 
     await expect(
@@ -155,7 +162,7 @@ describe('RefreshChannelHandler', () => {
       records: [makeRecord({ id: 1 }), makeRecord({ id: 2 })],
       fetchedAt: new Date(),
     });
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock();
 
     await expect(
@@ -170,12 +177,40 @@ describe('RefreshChannelHandler', () => {
         .fn()
         .mockRejectedValue(new Error('Astro request failed: timeout')),
     } as unknown as CachedAstroClient;
-    const handler = new RefreshChannelHandler(cachedAstroClient);
+    const handler = new RefreshChannelHandler(cachedAstroClient, makeCache());
     const tx = createTxMock();
 
     const result = handler.handle(makeCommand(), tx);
     await expect(result).rejects.toThrow('Astro request failed: timeout');
     await expect(result).rejects.not.toBeInstanceOf(UnrecoverableError);
     expect(tx.channel.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("deletes the channel's cached detail entry once it actually writes a row", async () => {
+    const cachedAstroClient = makeCachedAstroClient({
+      records: [makeRecord({ id: 42 })],
+      fetchedAt: new Date('2026-01-01T12:00:00Z'),
+    });
+    const cache = makeCache();
+    const handler = new RefreshChannelHandler(cachedAstroClient, cache);
+    const tx = createTxMock(1); // a row actually matched and was updated
+
+    await handler.handle(makeCommand({ channelId: 42 }), tx);
+
+    expect(cache.del).toHaveBeenCalledWith('detail:42');
+  });
+
+  it('does not touch the cache when the write is a no-op (already-fresher data)', async () => {
+    const cachedAstroClient = makeCachedAstroClient({
+      records: [makeRecord({ id: 42 })],
+      fetchedAt: new Date('2026-01-01T12:00:00Z'),
+    });
+    const cache = makeCache();
+    const handler = new RefreshChannelHandler(cachedAstroClient, cache);
+    const tx = createTxMock(0); // no row matched the `lt` condition
+
+    await handler.handle(makeCommand({ channelId: 42 }), tx);
+
+    expect(cache.del).not.toHaveBeenCalled();
   });
 });
